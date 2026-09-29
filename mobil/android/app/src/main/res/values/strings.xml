@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">7Sanat Afyon</string>
+    <string name="title_activity_main">7Sanat Afyon</string>
+    <string name="package_name">com.yedisanat.afyon</string>
+    <string name="custom_url_scheme">com.yedisanat.afyon</string>
+</resources>

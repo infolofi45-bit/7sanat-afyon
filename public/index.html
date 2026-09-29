@@ -1,0 +1,2240 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0f131a" />
+<title>7Sanat Afyon — Yönetim Paneli</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: {
+        bg: "#0a0a0a", card: "#0f131a", line: "#282c34", accent: "#282c34", sec: "#24272e", soft: "#1f2228",
+        mut: "#8c8c8c", gold: "#fcc522", gold2: "#fdd452",
+      },
+      fontFamily: { display: ["Fraunces", "serif"], sans: ["Inter", "sans-serif"] },
+    } },
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  body { font-family: 'Inter', sans-serif; background:#0a0a0a; color:#f2f2f2; }
+  .font-display { font-family: 'Fraunces', serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #282c34; border-radius: 8px; }
+  input, select, textarea { color-scheme: dark; }
+  .staff { background: linear-gradient(90deg, transparent, rgba(252,197,34,.3), transparent); height:1px; }
+  @keyframes countUp { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+  .count-up { animation: countUp .6s ease-out; }
+  /* Telefon çentiği / alt çubuk için güvenli alan */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .alt-bosluk { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  html.uygulama, html.uygulama body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+  html.uygulama .yalniz-web { display: none !important; }
+  @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+  .fade-in { animation: fadeIn .15s ease-out; }
+  .kart { container-type: inline-size; }
+  .kart-parilti { background-image: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.18) 45%, rgba(255,255,255,0) 60%); }
+  @media print {
+    body * { visibility: hidden !important; }
+    .print-alan, .print-alan * { visibility: visible !important; }
+    .print-alan { position: absolute; left: 0; top: 0; width: 100%; background: #fff; }
+    .print-gizle { display: none !important; }
+  }
+</style>
+</head>
+<body class="text-neutral-100">
+<div id="app"></div>
+
+<script>
+/* ================================================================== */
+/*  NOT: Bu dosyada API anahtarı YOKTUR. Yapay zeka istekleri sunucuya  */
+/*  (/api/ai) gider; anahtar sunucudaki .env dosyasında saklanır.       */
+/* ================================================================== */
+
+/* ================================================================== */
+/* Yardımcı fonksiyonlar                                              */
+/* ================================================================== */
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+const TL = (n) => "₺" + Math.round(n || 0).toLocaleString("tr-TR");
+const AY_TAM = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
+const AY_KISA = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
+const GUNLER = ["Pazar","Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi"];
+const HAFTA_GUNLERI = ["Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi"];
+const DERS_SAATLERI = ["14:00","15:00","16:00","17:00","18:00"];
+const pad2 = (n) => String(n).padStart(2, "0");
+function tarihStr(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function bugun() { return tarihStr(new Date()); }
+function simdi() { const d = new Date(); return `${tarihStr(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function tarihTR(s) { if (!s) return "-"; const [t, saat] = String(s).split(/[ T]/); const [y,m,g] = t.split("-"); return `${g}.${m}.${y}${saat ? " " + saat.slice(0,5) : ""}`; }
+function haftaEtiketi(dateStr) {
+  if (!dateStr) return "";
+  const secilen = new Date(dateStr + "T00:00:00");
+  const gunIndex = (secilen.getDay() + 6) % 7;
+  const start = new Date(secilen); start.setDate(secilen.getDate() - gunIndex);
+  const end = new Date(start); end.setDate(start.getDate() + 6);
+  if (start.getMonth() === end.getMonth()) return `${start.getDate()}-${end.getDate()} ${AY_TAM[start.getMonth()]}`;
+  return `${start.getDate()} ${AY_KISA[start.getMonth()]}-${end.getDate()} ${AY_KISA[end.getMonth()]}`;
+}
+function datetimeGoster(v) { return v ? v.replace("T", " ") : ""; }
+function gunAdi(dateStr) { if (!dateStr) return ""; return GUNLER[new Date(dateStr + "T00:00:00").getDay()]; }
+function tarihEkle(dateStr, gun) { const d = new Date(dateStr + "T00:00:00"); d.setDate(d.getDate() + gun); return tarihStr(d); }
+function ayEkle(dateStr, ay) {
+  const d = new Date(dateStr + "T00:00:00"); const g = d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth() + ay);
+  const sonGun = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(g, sonGun)); return tarihStr(d);
+}
+function sadeceRakam(s) { return String(s || "").replace(/\D/g, ""); }
+function telGoster(t) { const r = sadeceRakam(t); if (r.length !== 11) return t || "-"; return `${r.slice(0,4)} ${r.slice(4,7)} ${r.slice(7,9)} ${r.slice(9)}`; }
+function telEsit(a, b) { const x = sadeceRakam(a).slice(-10), y = sadeceRakam(b).slice(-10); return x.length === 10 && x === y; }
+function slug(s) { return String(s).toLowerCase().replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ı/g,"i").replace(/ö/g,"o").replace(/ş/g,"s").replace(/ü/g,"u").replace(/[^a-z0-9]/g,""); }
+function initials(ad) { return String(ad||"?").split(" ").filter(Boolean).slice(0,2).map(p=>p[0]).join("").toUpperCase(); }
+function yeniId(on) { return on + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+const VELI_SORULARI = [
+  "Çocuğunuzun bu alana ilgisi nasıl başladı / neden bu branşı seçtiniz?",
+  "Çocuğunuzu üç kelimeyle nasıl tanımlarsınız (örn. sabırlı, enerjik, çekingen)?",
+  "Çocuğunuzun bu alanda daha önce bir deneyimi oldu mu?",
+  "Nasıl bir öğretmen yaklaşımı bekliyorsunuz (disiplinli / esnek / oyun temelli vb.)?",
+  "Bu ders için en önemli beklentiniz / hedefiniz nedir?",
+];
+
+/* Branşlar: bireysel (Piyano/Gitar/Keman) ve grup (Bale/Jimnastik/Tiyatro/Drama) */
+const BRANS_BILGI = {
+  Piyano:    { tur:"bireysel", ucret:15000, renk:"#fbbf24", uzmanlik:"Klasik piyano, çocuk pedagojisi", tarz:"Sabırlı, yapılandırılmış, küçük hedeflerle ilerleyen", yasAraligi:"5-17" },
+  Gitar:     { tur:"bireysel", ucret:12000, renk:"#a78bfa", uzmanlik:"Klasik ve pop gitar, sahne performansı", tarz:"Enerjik, motive edici, proje tabanlı", yasAraligi:"8-18" },
+  Keman:     { tur:"bireysel", ucret:16000, renk:"#f472b6", uzmanlik:"Klasik keman, konservatuvar sınav hazırlığı", tarz:"Detaycı, hedef odaklı, düzenli tekrar isteyen", yasAraligi:"6-16" },
+  Bale:      { tur:"grup", ucret:11000, renk:"#34d399", uzmanlik:"Klasik bale, esneklik ve duruş eğitimi", tarz:"Disiplinli, düzenli tekrarla ilerleyen, pozitif", yasAraligi:"5-13" },
+  Jimnastik: { tur:"grup", ucret:10000, renk:"#60a5fa", uzmanlik:"Ritmik jimnastik, temel akrobasi", tarz:"Enerjik, güven aşılayan, oyun temelli", yasAraligi:"5-12" },
+  Tiyatro:   { tur:"grup", ucret:13000, renk:"#fb7185", uzmanlik:"Sahne oyunculuğu, diksiyon, sahne hareketi", tarz:"Yaratıcı, cesaretlendiren, performans odaklı", yasAraligi:"8-17" },
+  Drama:     { tur:"grup", ucret:9000,  renk:"#22d3ee", uzmanlik:"Yaratıcı drama, doğaçlama, rol oyunları", tarz:"Oyun temelli, empatik, özgüven geliştiren", yasAraligi:"5-12" },
+};
+const BRANSLAR = () => Object.keys(BRANS_BILGI);
+const bransRenk = (b) => (BRANS_BILGI[b] && BRANS_BILGI[b].renk) || "#fcc522";
+const grupDersiMi = (b) => BRANS_BILGI[b] && BRANS_BILGI[b].tur === "grup";
+
+/* Kafe kartları */
+const KART_TIPLERI = {
+  silver:   { ad:"Silver",   bg:"linear-gradient(135deg,#6b7280 0%,#d1d5db 55%,#9ca3af 100%)", yazi:"#111827", vurgu:"#374151" },
+  platinum: { ad:"Platinum", bg:"linear-gradient(135deg,#1e293b 0%,#64748b 50%,#cbd5e1 100%)", yazi:"#f8fafc", vurgu:"#e2e8f0" },
+  gold:     { ad:"Gold",     bg:"linear-gradient(135deg,#8a6508 0%,#fcc522 55%,#b8860b 100%)", yazi:"#1a1204", vurgu:"#3b2a05" },
+};
+const KAFE_MENU = [
+  ["Caffè Latte", 95], ["Americano", 80], ["Cappuccino", 95], ["Sıcak Çikolata", 90], ["Frappuccino", 140],
+  ["Çay", 30], ["Su", 20], ["Meyve Suyu", 45], ["Kurabiye", 60], ["Sandviç", 120], ["Muffin", 75], ["Kek Dilimi", 85],
+];
+function kartNoUret(mevcut) {
+  const set = new Set(mevcut || (DB ? DB.kartlar.map(k=>k.no) : []));
+  let no;
+  do { no = "7" + Array.from({ length: 15 }, () => Math.floor(Math.random() * 10)).join(""); } while (set.has(no));
+  return no;
+}
+const kartNoGoster = (no) => String(no || "").replace(/(\d{4})(?=\d)/g, "$1 ");
+function sifreUret() { return String(Math.floor(100000 + Math.random() * 900000)); }
+
+/* ================================================================== */
+/* Demo veri                                                            */
+/* ================================================================== */
+function seedDb() {
+  const ogretmenTanimlari = [
+    { id:"p1", ad:"Ayşe Yılmaz", brans:"Piyano", tecrube:8, email:"ayse@7sanat.com" },
+    { id:"p2", ad:"Sena Korkmaz", brans:"Piyano", tecrube:5 },
+    { id:"p3", ad:"Burak Aydın", brans:"Piyano", tecrube:11 },
+    { id:"p4", ad:"Gül Tekin", brans:"Piyano", tecrube:6 },
+    { id:"p5", ad:"Hakan Yıldız", brans:"Piyano", tecrube:14 },
+    { id:"g1", ad:"Mehmet Kaya", brans:"Gitar", tecrube:5 },
+    { id:"k1", ad:"Zeynep Arslan", brans:"Keman", tecrube:6 },
+    { id:"bal1", ad:"Elif Demir", brans:"Bale", grup:"Grup 1", tecrube:10 },
+    { id:"bal2", ad:"Aslı Kurt", brans:"Bale", grup:"Grup 2", tecrube:4 },
+    { id:"bal3", ad:"Naz Erdoğan", brans:"Bale", grup:"Grup 3", tecrube:7 },
+    { id:"jim1", ad:"Can Öztürk", brans:"Jimnastik", grup:"Grup 1", tecrube:12 },
+    { id:"jim2", ad:"Deren Yaman", brans:"Jimnastik", grup:"Grup 2", tecrube:3 },
+    { id:"jim3", ad:"Selin Acar", brans:"Jimnastik", grup:"Grup 3", tecrube:9 },
+    { id:"tiy1", ad:"Kerem Aslan", brans:"Tiyatro", grup:"Grup 1", tecrube:9 },
+    { id:"tiy2", ad:"Duygu Şen", brans:"Tiyatro", grup:"Grup 2", tecrube:6 },
+    { id:"dr1", ad:"Ozan Işık", brans:"Drama", grup:"Grup 1", tecrube:7 },
+    { id:"dr2", ad:"Merve Ateş", brans:"Drama", grup:"Grup 2", tecrube:4 },
+  ];
+  const yoklamaOrnekleri = [
+    [["2026-06-01","var"],["2026-06-08","var"],["2026-06-15","var"],["2026-06-22","yok"],["2026-06-29","var"],["2026-07-06","var"]],
+    [["2026-06-01","var"],["2026-06-08","var"],["2026-06-15","var"],["2026-06-22","var"],["2026-06-29","var"],["2026-07-06","var"]],
+    [["2026-06-01","var"],["2026-06-08","var"],["2026-06-15","yok"],["2026-06-22","var"],["2026-06-29","var"],["2026-07-06","var"]],
+    [["2026-06-01","var"],["2026-06-08","yok"],["2026-06-15","var"],["2026-06-22","var"],["2026-06-29","var"],["2026-07-06","var"]],
+  ];
+  const teachers = ogretmenTanimlari.map((t, i) => ({
+    id:t.id, ad:t.ad, brans:t.brans, grup:t.grup || null,
+    uzmanlik:BRANS_BILGI[t.brans].uzmanlik, tarz:BRANS_BILGI[t.brans].tarz, yasAraligi:BRANS_BILGI[t.brans].yasAraligi,
+    tecrube:t.tecrube,
+    tel:`0532 ${400 + i} ${pad2(10 + i)} ${pad2(30 + i)}`,
+    email:t.email || `${slug(t.ad.split(" ")[0])}@7sanat.com`,
+    sifre:"ogretmen123",
+    baslangic:`20${pad2(18 + (i % 7))}-09-01`,
+    not_:"",
+    kurumYoklama:yoklamaOrnekleri[i % yoklamaOrnekleri.length].map(d=>[...d]),
+  }));
+
+  const ogrenciIsimleri = ["Ege Yıldız","Deniz Kaya","Zehra Aksoy","Kerem Şahin","Elif Su Yalçın","Bora Çelik","Nil Aydın","Kaan Er","Mira Demirtaş","Toprak Güneş",
+    "Asel Kurt","Yusuf Polat","Defne Aktaş","Umut Aras","Aylin Sönmez","Berk Turan","Ceylin Avcı","Doruk Yalman","Ecrin Bal","Fikret Onur",
+    "Gökçe Erdem","Hakan Solmaz","Irmak Taş","Kemal Baysal","Lara Ekinci","Melis Doğan","Nazlı Kurt","Onur Baran","Pelin Aydemir","Rüzgar Alp",
+    "Selin Aktürk","Taner Güngör","Uras Bekar","Vera Sancak","Yaren Erol","Zeki Bulut","Ada Çetin","Bilge Sarı","Cem Aksu","Duru Yıldırım",
+    "Efe Karaca","Gizem Polat","Hazal Uçar","İrem Kaplan","Kaya Ersoy","Alp Demirtaş","Ceren Bulut","Emir Sancaktar","Feyza Onat","Görkem Aydınlı",
+    "Halil Ergin","İpek Sezer","Kayra Tunç","Leyla Aksoy","Mert Kalkan","Nehir Doğu","Ozan Bilgiç","Rana Çakır","Sinan Kutlu","Tuana Ersan",
+    "Arda Kılıç","Beren Özkan","Çağan Uysal","Dila Karaman","Eren Tekin","Füsun Ak","Gökay Er","Hira Yavuz","İlker Sezgin","Jale Özer",
+    "Kuzey Aydoğan","Lina Şimşek","Mete Koç","Nisa Akın","Oğuz Tan","Peri Başar","Sarp Güler","Tuna Keskin","Ümran Işık","Yiğit Ay"];
+  const veliIsimleri = ["Ahmet","Fatma","Mustafa","Emine","Ali","Hatice","Hüseyin","Sibel","Murat","Esra","Serdar","Gamze","Okan","Derya"];
+  const notlarOrnekleri = [
+    [["16-22 Haziran","Yeni konuyu hızlı kavradı, çok istekli.",5],["23-29 Haziran","Küçük hatalar var ama gelişim sürüyor.",4],["30 Haz-6 Tem","İstikrarlı ve düzenli çalışıyor.",5]],
+    [["16-22 Haziran","Temel teknikte ilerleme var.",4],["23-29 Haziran","Konsantrasyon zaman zaman düşüyor.",3]],
+    [["16-22 Haziran","Motivasyonu yüksek, evde/ekstra pratik yapıyor.",5],["23-29 Haziran","Sahne ve performans kaygısını yönetmeyi öğreniyor.",4],["30 Haz-6 Tem","Grup içinde belirgin şekilde öne çıkıyor.",5]],
+    [["16-22 Haziran","Derse hazırlıksız geliyor, tekrar gerekiyor.",2],["23-29 Haziran","İlgisi azalmış görünüyor, veliyle görüşülmeli.",2]],
+    [],
+  ];
+  const DEVAM_BASLANGIC = "2026-03-30";
+  const devamTarihleri = Array.from({ length: 15 }, (_, i) => tarihEkle(DEVAM_BASLANGIC, i * 7));
+  const devamDurumOrnekleri = [
+    ["var","var","var","var","var","var","var","var","var","var","var","var","var","var","var"],
+    ["var","var","yok","var","var","var","var","yok","var","var","var","var","var","var","var"],
+    ["var","yok","var","var","yok","var","var","var","yok","var","var","yok","var","var","var"],
+    ["var","var","var","yok","yok","var","var","var","yok","yok","var","var","yok","var","var"],
+    ["yok","var","var","var","yok","var","yok","var","var","yok","var","yok","var","var","yok"],
+  ];
+  const devamOrnekleri = devamDurumOrnekleri.map((d) => d.map((durum, i) => [devamTarihleri[i], durum]));
+  const seviyeler = ["Başlangıç","Orta","İleri"];
+  const ilgi = { Piyano:"Klasik ve pop müzik", Gitar:"Akustik/elektro gitar, şarkı yazımı", Keman:"Klasik müzik, orkestra", Bale:"Esneklik, duruş ve ritim", Jimnastik:"Denge, esneklik ve temel akrobasi", Tiyatro:"Sahnede rol almak, diksiyon", Drama:"Oyun kurmak, hikâye anlatmak" };
+  const beklenti = { Piyano:"Düzenli ilerleme ve sahne özgüveni", Gitar:"Kendi başına çalabilmek ve repertuvar geliştirmek", Keman:"Temel teknik ve konservatuvar hazırlığı", Bale:"Grup içinde disiplinli ve keyifli bir gelişim", Jimnastik:"Fiziksel gelişim ve özgüven kazanımı", Tiyatro:"Topluluk önünde rahat konuşma ve yıl sonu gösterisi", Drama:"Sosyalleşme, empati ve kendini ifade etme" };
+  const veliCevapOrnekleri = [
+    ["Evde sürekli bu alanla ilgili şeyler yapmak istiyor, biz de destekleyelim dedik.","Meraklı ve azimli, bir kere başladı mı bırakmak istemiyor.","Daha önce özel bir deneyimi olmadı, ilk kez bu yıl başlıyor.","Çok sert olmayan ama düzenli takip eden bir yaklaşım bekliyoruz.","Kısa vadede keyif alması, uzun vadede düzenli ilerlemesi bizim için önemli."],
+    ["Çevresinde/okulda gördü, kendisi istedi.","Enerjik ve girişken bir çocuk, yeni şeyler denemeyi seviyor.","Daha önce kısa süreli bir kursa gitmişti.","Oyun temelli, eğlenceli bir yaklaşım bizim için daha uygun olur.","Özgüven kazanması en büyük beklentimiz."],
+    ["Ailede bu alana ilgi duyan biri var, ondan etkilendi.","Sabırlı ama bazen çabuk sıkılabiliyor.","Hiç deneyimi yok, sıfırdan başlıyoruz.","Disiplinli ama çocuğu yıldırmayacak bir tarz istiyoruz.","Konservatuvar/yarışma gibi ciddi hedeflerimiz var."],
+    ["Kendi isteğiyle başladı, çok istekliydi.","Çekingen ama ilgi duyduğu şeye çok konsantre olabiliyor.","Geçen yıl başka bir kurumda dersler almıştı.","Esnek, çocuğun temposuna göre ilerleyen bir öğretmen istiyoruz.","Sosyalleşmesi ve özgüveni gelişsin istiyoruz."],
+    ["Bir gösteri/konser izledikten sonra kendisi istedi.","Neşeli, arkadaş canlısı, grup ortamını seviyor.","Kreşte/okulda benzer bir etkinliğe katılmıştı.","Pozitif geri bildirimle motive eden bir yaklaşım istiyoruz.","Düzenli devam etmesi ve keyif alması yeterli, rekabetçi bir hedefimiz yok."],
+  ];
+  const veliCevapUret = (n) => VELI_SORULARI.map((soru, qi) => [soru, veliCevapOrnekleri[n % veliCevapOrnekleri.length][qi]]);
+  const YONTEMLER = ["Nakit","Kredi Kartı","Havale/EFT"];
+  const BUGUN = bugun();
+
+  /* Ödemeler: vadesi gelen taksitler ödenmiş; bazı öğrenciler 1 taksit geride (gecikmiş) */
+  function odemeUret(kayitTarihi, ucret, taksitSayisi, geride) {
+    const taksit = Math.round(ucret / taksitSayisi);
+    let vadesiGelen = 0;
+    for (let i = 0; i < taksitSayisi; i++) if (ayEkle(kayitTarihi, i) <= BUGUN) vadesiGelen++;
+    const odenecek = Math.max(0, vadesiGelen - (geride ? 1 : 0));
+    const liste = [];
+    for (let i = 0; i < odenecek; i++) {
+      const tutar = i === taksitSayisi - 1 ? ucret - taksit * (taksitSayisi - 1) : taksit;
+      let tarih = tarihEkle(ayEkle(kayitTarihi, i), i % 3);
+      if (tarih > BUGUN) tarih = BUGUN;
+      liste.push({ id: "o" + Math.random().toString(36).slice(2, 9), tarih, tutar, yontem: YONTEMLER[i % 3], not_: "", alan: "Buse Yıldırım" });
+    }
+    return liste;
+  }
+
+  const students = [];
+  let ni = 0, sid = 1;
+  function ogrenciOlustur(brans, t, ekstra) {
+    const ad = ogrenciIsimleri[ni % ogrenciIsimleri.length]; ni++;
+    const soyad = ad.split(" ").slice(-1)[0];
+    const grup = grupDersiMi(brans);
+    const kayitTarihi = ekstra.kayitTarihi;
+    const taksitSayisi = ekstra.taksitSayisi;
+    const s = {
+      id:"s"+sid, ad, yas: ekstra.yas, brans, grup: t ? (t.grup || null) : null,
+      kayitTarihi, kayitUcreti:BRANS_BILGI[brans].ucret, taksitSayisi,
+      odemeler: odemeUret(kayitTarihi, BRANS_BILGI[brans].ucret, taksitSayisi, ekstra.geride),
+      teacherId: t ? t.id : null,
+      dersGunu: ekstra.dersGunu || null, dersSaati: ekstra.dersSaati || null,
+      ilgiAlani: ilgi[brans], beklenti: beklenti[brans], seviye: seviyeler[sid % 3],
+      veliSoruCevap: veliCevapUret(sid),
+      haftalikNotlar: t ? notlarOrnekleri[sid % notlarOrnekleri.length].map(n=>[...n]) : [],
+      devam: t ? devamOrnekleri[sid % devamOrnekleri.length].map(d=>[...d]) : [],
+      veli: {
+        ad: `${veliIsimleri[sid % veliIsimleri.length]} ${soyad}`,
+        tel: `053${String(10000000 + sid * 7919).slice(-8)}`,
+        email: `${slug(veliIsimleri[sid % veliIsimleri.length])}.${slug(soyad)}@email.com`,
+        sifre: sifreUret(),
+      },
+      kartNo: null,
+    };
+    students.push(s); sid++;
+    return s;
+  }
+
+  teachers.forEach((t, ti) => {
+    const grup = grupDersiMi(t.brans);
+    const sayi = grup ? 4 : 3;
+    const grupGunu = HAFTA_GUNLERI[ti % HAFTA_GUNLERI.length];
+    const grupSaati = DERS_SAATLERI[ti % DERS_SAATLERI.length];
+    for (let k = 0; k < sayi; k++) {
+      ogrenciOlustur(t.brans, t, {
+        yas: grup ? 5 + ((sid + k) % 7) : 6 + ((sid + k) % 11),
+        kayitTarihi: `2025-${pad2(6 + (sid % 7))}-${pad2(1 + (sid % 27))}`,
+        taksitSayisi: 6 + (sid % 7),
+        geride: sid % 5 === 0,
+        dersGunu: grup ? grupGunu : HAFTA_GUNLERI[(sid + k) % HAFTA_GUNLERI.length],
+        dersSaati: grup ? grupSaati : DERS_SAATLERI[(sid + k) % DERS_SAATLERI.length],
+      });
+    }
+  });
+  const branslar = BRANSLAR();
+  for (let i = 0; i < 15; i++) {
+    const brans = branslar[i % branslar.length];
+    ogrenciOlustur(brans, null, {
+      yas: grupDersiMi(brans) ? 5 + (i % 7) : 6 + (i % 11),
+      kayitTarihi: `2026-07-${pad2(1 + (i % 27))}`,
+      taksitSayisi: 3 + (i % 4),
+      geride: i % 3 === 0,
+    });
+  }
+
+  /* Kafe kartları: her öğrenciye bir kart, aynı numaradan 2 kopya (veli + öğrenci) */
+  const kartlar = [], kartHareketleri = [];
+  const tipler = ["silver","platinum","gold"];
+  const ilkYukleme = { silver: 500, platinum: 1000, gold: 2000 };
+  students.forEach((s, i) => {
+    const tip = tipler[i % 3];
+    const no = kartNoUret(kartlar.map(k=>k.no));
+    kartlar.push({ no, tip, studentId: s.id, olusturma: s.kayitTarihi, aktif: true });
+    s.kartNo = no;
+    kartHareketleri.push({ id:"h"+Math.random().toString(36).slice(2,9), kartNo:no, tarih:`2026-09-01 ${pad2(10 + (i % 8))}:15`, tur:"yukleme", tutar:ilkYukleme[tip], aciklama:"Bakiye yükleme — Nakit", kopya:null, islemYapan:"Buse Yıldırım" });
+    const harcamaSayisi = 2 + (i % 4);
+    for (let h = 0; h < harcamaSayisi; h++) {
+      const [urun, fiyat] = KAFE_MENU[(i + h * 5) % KAFE_MENU.length];
+      kartHareketleri.push({ id:"h"+Math.random().toString(36).slice(2,9), kartNo:no, tarih:`2026-09-${pad2(3 + h * 5 + (i % 4))} ${pad2(14 + (h % 4))}:${pad2((i * 7 + h * 11) % 60)}`, tur:"harcama", tutar:fiyat, aciklama:urun, kopya: (i + h) % 2 ? "veli" : "öğrenci", islemYapan:"Kasa" });
+    }
+  });
+
+  const makeupRequests = [
+    { id:"m1", studentId:"s2", ogretmenId:students.find(s=>s.id==="s2").teacherId, dersTarihi:"2026-06-11 17:00", sebep:"Sağlık raporu", onerilenTarih:"2026-06-14 16:00", durum:"beklemede" },
+    { id:"m2", studentId:"s5", ogretmenId:students.find(s=>s.id==="s5").teacherId, dersTarihi:"2026-06-04 18:30", sebep:"Aile ziyareti", onerilenTarih:"2026-06-07 11:00", durum:"onaylandı" },
+  ];
+  const dersAtamaTalepleri = [
+    { id:"d1", studentId: students.find(s=>!s.teacherId && s.brans==="Keman").id, teacherId:"k1", tarih:"2026-10-05 16:00", not_:"Veli ile görüşüldü, bu saat uygun.", durum:"beklemede" },
+  ];
+  const personel = [
+    { email:"admin@7sanat.com", sifre:"admin123", rol:"yonetici", ad:"Serkan Bulut", unvan:"Kurum Müdürü" },
+    { email:"sekreter@7sanat.com", sifre:"sekreter123", rol:"sekreter", ad:"Buse Yıldırım", unvan:"Sekreter" },
+    { email:"kasa@7sanat.com", sifre:"kasa123", rol:"kasa", ad:"Kafe Kasası", unvan:"Kasa (POS)" },
+  ];
+  return { teachers, students, makeupRequests, dersAtamaTalepleri, kartlar, kartHareketleri, personel, surumVeri: 2 };
+}
+
+/* ================================================================== */
+/* Hesaplamalar                                                         */
+/* ================================================================== */
+function odemeOzeti(s) {
+  const n = Math.max(1, s.taksitSayisi || 1);
+  const taksitTutari = Math.round(s.kayitUcreti / n);
+  const odenen = (s.odemeler || []).reduce((a, p) => a + (Number(p.tutar) || 0), 0);
+  const kalan = Math.max(0, s.kayitUcreti - odenen);
+  const BUGUN = bugun();
+  let kumulatif = 0; const plan = []; let geciken = 0, odenenTaksit = 0;
+  for (let i = 0; i < n; i++) {
+    const tutar = i === n - 1 ? s.kayitUcreti - taksitTutari * (n - 1) : taksitTutari;
+    const onceki = kumulatif; kumulatif += tutar;
+    const vade = ayEkle(s.kayitTarihi, i);
+    let durum;
+    if (odenen >= kumulatif) { durum = "ödendi"; odenenTaksit++; }
+    else if (vade < BUGUN) { durum = "gecikti"; geciken++; }
+    else if (odenen > onceki) durum = "kısmi";
+    else durum = "bekliyor";
+    plan.push({ no: i + 1, vade, tutar, durum, kalan: Math.max(0, Math.min(tutar, kumulatif - odenen)) });
+  }
+  const genel = kalan <= 0 ? "tamamlandı" : geciken > 0 ? "gecikmiş" : "güncel";
+  const sonraki = plan.find(p => p.durum !== "ödendi");
+  return { taksitTutari, odenen, kalan, plan, geciken, odenenTaksit, durum: genel, sonraki };
+}
+function devamOrani(list) {
+  if (!list || list.length === 0) return null;
+  return Math.round((list.filter((d) => d[1] === "var").length / list.length) * 100);
+}
+function yasGrubu(yas) { if (yas <= 6) return "5-6"; if (yas <= 10) return "7-10"; if (yas <= 14) return "11-14"; return "15-18"; }
+function kartBul(no) { return DB.kartlar.find(k => k.no === no); }
+function kartHareketleri(no) { return DB.kartHareketleri.filter(h => h.kartNo === no).sort((a,b)=>b.tarih.localeCompare(a.tarih)); }
+function kartBakiye(no) { return DB.kartHareketleri.filter(h => h.kartNo === no).reduce((a, h) => a + (h.tur === "yukleme" ? h.tutar : -h.tutar), 0); }
+function ogretmenAd(tid) { const t = DB.teachers.find(x => x.id === tid); return t ? t.ad : null; }
+function ogrenci(sid) { return DB.students.find(s => s.id === sid); }
+
+/* ================================================================== */
+/* Mobil uygulama (iOS / Android) desteği                              */
+/* Uygulamada panel telefona gömülüdür; veriler kurumun sunucusundan   */
+/* gelir. Sunucu adresi ilk açılışta girilir ve telefonda saklanır.    */
+/* ================================================================== */
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const LS_SUNUCU = "7sanat_sunucu";
+// Uygulamayı derlerken varsayılan sunucu adresi buraya yazılabilir (örn. "https://panel.7sanatafyon.com").
+// Boş bırakılırsa ilk açılışta kullanıcıdan istenir.
+const VARSAYILAN_SUNUCU = "";
+let API_BASE = NATIVE ? (localStorageGuvenli(LS_SUNUCU) || VARSAYILAN_SUNUCU) : "";
+let SUNUCU_HATA = "";
+function localStorageGuvenli(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function api(yol) { return API_BASE + yol; }
+function eklenti(ad) { return NATIVE && window.Capacitor.Plugins ? window.Capacitor.Plugins[ad] : null; }
+if (NATIVE) document.documentElement.classList.add("uygulama");
+function sunucuAdresiDuzelt(v) {
+  let a = String(v || "").trim().replace(/\/+$/, "");
+  if (a && !/^https?:\/\//i.test(a)) a = (/^(\d+\.|localhost)/.test(a) ? "http://" : "https://") + a;
+  return a;
+}
+async function sunucuKaydet() {
+  const adres = sunucuAdresiDuzelt(val("sunucuAdres"));
+  if (!adres) { SUNUCU_HATA = "Sunucu adresini girin."; render(); return; }
+  SUNUCU_HATA = "Bağlanılıyor..."; render();
+  try {
+    const kontrol = new AbortController(); const zaman = setTimeout(() => kontrol.abort(), 8000);
+    const r = await fetch(adres + "/api/db", { cache: "no-store", signal: kontrol.signal }); clearTimeout(zaman);
+    if (!r.ok) throw new Error("sunucu " + r.status + " döndürdü");
+    await r.json();
+  } catch (e) {
+    SUNUCU_HATA = "Bağlanılamadı (" + (e.name === "AbortError" ? "zaman aşımı" : e instanceof TypeError ? "sunucuya ulaşılamadı" : e.message) + "). Adresi ve internet bağlantısını kontrol edin.";
+    render(); return;
+  }
+  try { localStorage.setItem(LS_SUNUCU, adres); } catch (e) {}
+  API_BASE = adres; SUNUCU_HATA = ""; DB = null; USER = null; render(); initDb();
+}
+function sunucuDegistir() {
+  API_BASE = ""; DB = null; USER = null; ROLE = null; SUNUCU_HATA = ""; MODALLAR = [];
+  try { localStorage.removeItem(LS_SUNUCU); localStorage.removeItem(SS_OTURUM); } catch (e) {}
+  render();
+}
+function sunucuAyarHtml() {
+  return `<div class="min-h-screen flex flex-col items-center justify-center px-5 py-10 pt-safe">
+    <div class="w-16 h-16 rounded-2xl bg-gold/20 text-gold flex items-center justify-center mb-4">${ikon("music","w-8 h-8")}</div>
+    <h1 class="font-display text-3xl font-bold text-gold">7Sanat</h1><p class="text-mut mt-1 mb-8">Afyon Sanat Akademisi</p>
+    <form onsubmit="event.preventDefault(); sunucuKaydet(); return false;" class="w-full max-w-md bg-card border border-line rounded-xl p-6">
+      <h2 class="font-display text-xl font-semibold mb-1">Sunucuya Bağlan</h2>
+      <p class="text-xs text-mut mb-5">Kurumunuzun panel adresini girin. Bu işlem yalnızca bir kez yapılır.</p>
+      ${lbl("Sunucu adresi")}<input id="sunucuAdres" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://panel.7sanatafyon.com" value="${esc(API_BASE)}" class="${INP} py-2.5" />
+      ${SUNUCU_HATA ? `<p class="text-xs mt-3 ${SUNUCU_HATA.startsWith("Bağlanılıyor") ? "text-mut" : "text-red-400"}">${esc(SUNUCU_HATA)}</p>` : ""}
+      <button type="submit" class="${BTN.p} w-full mt-5 py-2.5">Bağlan</button>
+    </form>
+  </div>`;
+}
+function sunucuHataHtml() {
+  return `<div class="min-h-screen flex flex-col items-center justify-center px-5 text-center pt-safe">
+    <div class="w-14 h-14 rounded-2xl bg-red-500/15 text-red-400 flex items-center justify-center mb-4">${ikon("alert","w-7 h-7")}</div>
+    <h2 class="font-display text-xl font-semibold">Sunucuya ulaşılamıyor</h2>
+    <p class="text-sm text-mut mt-2 max-w-xs">${esc(API_BASE)} adresine bağlanılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.</p>
+    <div class="flex gap-2 mt-6"><button onclick="SUNUCU_HATA=''; render(); initDb()" class="${BTN.p}">Tekrar Dene</button><button onclick="sunucuDegistir()" class="${BTN.s} !text-sm !px-4 !py-2">Adresi Değiştir</button></div>
+  </div>`;
+}
+/* Dosya indirme: uygulamada telefonun paylaş menüsü açılır (WhatsApp, Drive, e-posta...) */
+async function dosyaPaylas(dosyaAdi, blob) {
+  const fs = eklenti("Filesystem"), paylas = eklenti("Share");
+  if (!fs || !paylas) { toast("Bu cihazda dosya paylaşımı desteklenmiyor.", "hata"); return; }
+  try {
+    const b64 = await new Promise((ok, hata) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = hata; r.readAsDataURL(blob); });
+    const sonuc = await fs.writeFile({ path: dosyaAdi, data: b64, directory: "CACHE" });
+    await paylas.share({ title: dosyaAdi, url: sonuc.uri, dialogTitle: "Dosyayı paylaş" });
+  } catch (e) { if (!/cancel/i.test(String(e && e.message))) toast("Dosya paylaşılamadı: " + ((e && e.message) || e), "hata"); }
+}
+async function uygulamaKurulum() {
+  if (!NATIVE) return;
+  const sb = eklenti("StatusBar");
+  if (sb) { try { await sb.setStyle({ style: "DARK" }); await sb.setBackgroundColor({ color: "#0f131a" }); } catch (e) {} }
+  const splash = eklenti("SplashScreen");
+  if (splash) { try { await splash.hide(); } catch (e) {} }
+  const app = eklenti("App");
+  if (app) {
+    // Android geri tuşu: önce açık pencereyi / menüyü kapat, sonra uygulamayı arka plana al
+    app.addListener("backButton", () => {
+      if (MODALLAR.length) modalKapat();
+      else if (MOBIL_MENU_ACIK) mobilMenuKapat();
+      else app.minimizeApp();
+    });
+    // Uygulamaya geri dönülünce güncel veriyi çek
+    app.addListener("resume", () => { if (USER) sunucudanYenile(); });
+  }
+}
+
+/* ================================================================== */
+/* Yapay zeka — istekler sunucudaki /api/ai vekiline gider              */
+/* ================================================================== */
+async function callAI(system, user) {
+  if (location.protocol === "file:" && !NATIVE) throw new Error("Yapay zeka için sunucu gerekli: klasörde 'npm start' çalıştırıp http://localhost:3000 adresinden açın.");
+  const resp = await fetch(api("/api/ai"), { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ system, user }) });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "İstek başarısız: " + resp.status);
+  return data.text || "";
+}
+function parseJsonLoose(text) {
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  const start = cleaned.indexOf("{"), end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("JSON bulunamadı");
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+async function aiRiskAnaliz(student) {
+  const notlar = student.haftalikNotlar.map((n) => `${n[0]}: ${n[1]} (puan ${n[2]}/5)`).join(" | ") || "Henüz haftalık not girilmemiş.";
+  const oran = devamOrani(student.devam);
+  const system = `Sen 7Sanat Afyon sanat ve müzik eğitim merkezinde çalışan, öğrenci gelişimini takip eden bir eğitim analistisin. Sana bir öğrencinin haftalık öğretmen notları ve devam oranı verilecek. Bu verilere dayanarak SADECE aşağıdaki JSON formatında, başka hiçbir açıklama eklemeden, Türkçe yanıt ver:
+{"durum": "iyi" | "dikkat" | "riskli", "ozet": "iki cümlelik değerlendirme", "oneri": "yöneticiye veya öğretmene tek cümlelik somut öneri"}`;
+  const user = `Öğrenci: ${student.ad}, Yaş: ${student.yas}, Branş: ${student.brans}, Seviye: ${student.seviye}
+Devam oranı: ${oran === null ? "veri yok" : oran + "%"}
+Haftalık gelişim notları: ${notlar}`;
+  return parseJsonLoose(await callAI(system, user));
+}
+async function aiOgretmenEslestir(student, teachers) {
+  const uygunlar = teachers.filter(t => t.brans === student.brans)
+    .map((t) => `id:${t.id}, ad:${t.ad}, branş:${t.brans}${t.grup ? ", grup:" + t.grup : ""}, uzmanlık:${t.uzmanlik}, tarz:${t.tarz}, yaş aralığı:${t.yasAraligi}, tecrübe:${t.tecrube} yıl, mevcut öğrenci:${DB.students.filter(s=>s.teacherId===t.id).length}`).join("\n");
+  if (!uygunlar) throw new Error("Bu branşta tanımlı öğretmen yok. Öğretmenler sayfasından ekleyin.");
+  const veliNotlari = (student.veliSoruCevap||[]).map(qa=>`${qa[0]} -> ${qa[1]}`).join("\n") || "Veli görüşme notu girilmemiş.";
+  const system = `Sen 7Sanat Afyon'da öğrenci-öğretmen eşleştirmesi yapan bir karar destek uzmanısın. Öğrencinin branşı, yaşı, ilgi alanı, beklentisi, seviyesi ve veli görüşme notları ile öğretmenlerin uzmanlık ve pedagojik tarzını karşılaştırarak en uygun öğretmeni seç. SADECE aşağıdaki JSON formatında, başka hiçbir açıklama eklemeden, Türkçe yanıt ver:
+{"onerilenOgretmenId": "t_id", "gerekce": "iki-üç cümlelik somut Türkçe gerekçe"}`;
+  const user = `Öğrenci profili -> Ad: ${student.ad}, Yaş: ${student.yas}, Branş: ${student.brans}, Seviye: ${student.seviye}, İlgi alanı: ${student.ilgiAlani}, Beklenti: ${student.beklenti}
+Veli görüşme notları:
+${veliNotlari}
+Öğretmen listesi:
+${uygunlar}`;
+  return parseJsonLoose(await callAI(system, user));
+}
+
+/* ================================================================== */
+/* Durum (state) ve kalıcılık                                           */
+/* ================================================================== */
+let DB = null;
+let SUNUCU = false;       // sunucuya bağlıysa true, değilse tarayıcıda (localStorage) saklanır
+let SURUM = 0;
+let USER = null;          // { rol, ad, unvan, teacherId?, veliTel? }
+let ROLE = null;
+let LOGIN_EMAIL = "", LOGIN_SIFRE = "", LOGIN_HATA = "", SIFRE_GOSTER = false;
+let TABS = { yonetici:"ozet", ogretmen:"yoklama", sekreter:"yeni", kasa:"satis", veli:"ozet" };
+let AI = { risk: {}, matchSecili: null, matchDurum: { loading:false, error:"", data:null } };
+let MODALLAR = [];        // üst üste açılabilen pencereler
+let MOBIL_MENU_ACIK = false;
+let TOAST = null, TOAST_ZAMAN = null;
+let FORM_TEMIZLE = false;
+let HATIRLATILDI = new Set();
+/* Sayfa durumları */
+let YOKLAMA_TARIH = bugun(), YOKLAMA_TEMP = {};
+let GELISIM_OGRENCI = null, GELISIM_HAFTA = "";
+let TAKVIM_OGRETMEN = null;
+let OGR_ARAMA = "", OGR_BRANS = "";
+let FIN_FILTRE = "hepsi", FIN_ARAMA = "";
+let KART_ARAMA = "";
+let KASA_KART = null, KASA_SEPET = [], KASA_KOPYA = "öğrenci", KASA_ARAMA = "";
+let OGRT_ARAMA = "";
+let VELI_COCUK = null;
+let YENI_KART_TIP = "silver";
+const DEMO_MODU = true; // Canlıya alırken false yapın: giriş ekranındaki demo hesap kısayolları gizlenir
+
+const LS_DB = "7sanat_db_v2", LS_ARSIV = "7sanat_silinen_kayitlar", SS_OTURUM = "7sanat_oturum";
+function oturumDepo() { try { return NATIVE ? localStorage : sessionStorage; } catch (e) { return null; } }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+async function initDb() {
+  if (NATIVE && !API_BASE) { render(); return; }
+  if (location.protocol !== "file:" || NATIVE) {
+    try {
+      const r = await fetch(api("/api/db"), { cache: "no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        SUNUCU = true; SURUM = j.surum || 0;
+        if (j.db && j.db.surumVeri === 2) DB = j.db;
+      }
+    } catch (e) { SUNUCU = false; }
+  }
+  // Uygulamada veriler her zaman sunucudan gelir; bağlantı yoksa hata ekranı gösterilir
+  if (NATIVE && !SUNUCU) { SUNUCU_HATA = "baglanti"; render(); return; }
+  if (!DB && !SUNUCU) { const yerel = lsGet(LS_DB); if (yerel) { try { const d = JSON.parse(yerel); if (d.surumVeri === 2) DB = d; } catch (e) {} } }
+  if (!DB) { DB = seedDb(); await saveDb(); }
+  oturumYukle();
+  render();
+}
+let KAYIT_ZAMANLAYICI = null, KAYIT_ZINCIR = Promise.resolve(), BEKLEYENLER = [];
+async function sunucuyaYaz() {
+  try {
+    const r = await fetch(api("/api/db"), { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ db: DB, surum: SURUM }) });
+    if (r.status === 409) {
+      const j = await r.json(); DB = j.db; SURUM = j.surum;
+      toast("Başka bir kullanıcı veriyi güncellemişti; güncel veri yüklendi. Son işleminizi tekrar kontrol edin.", "uyari");
+      render();
+    } else if (r.ok) { SURUM = (await r.json()).surum; }
+    else toast("Kaydetme hatası: sunucu yanıt vermedi.", "hata");
+  } catch (e) { toast("Sunucuya ulaşılamadı; değişiklik sadece bu tarayıcıda tutuldu.", "hata"); }
+}
+function saveDb() {
+  lsSet(LS_DB, JSON.stringify(DB));
+  if (!SUNUCU) return Promise.resolve();
+  return new Promise((resolve) => {
+    BEKLEYENLER.push(resolve);
+    clearTimeout(KAYIT_ZAMANLAYICI);
+    // Kayıtlar sırayla gider: bir istek bitmeden diğeri gönderilmez (sürüm çakışmasını önler)
+    KAYIT_ZAMANLAYICI = setTimeout(() => {
+      const r = BEKLEYENLER; BEKLEYENLER = [];
+      KAYIT_ZINCIR = KAYIT_ZINCIR.then(sunucuyaYaz).then(() => r.forEach(f => f()));
+    }, 200);
+  });
+}
+async function sunucudanYenile() {
+  if (!SUNUCU) return;
+  await KAYIT_ZINCIR;
+  try {
+    const r = await fetch(api("/api/db"), { cache: "no-store" });
+    const j = await r.json();
+    if (j.surum !== SURUM && j.db) { DB = j.db; SURUM = j.surum; render(); }
+  } catch (e) {}
+}
+async function arsivle(kayit) {
+  if (SUNUCU) {
+    try { const r = await fetch(api("/api/arsiv"), { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(kayit) }); if (r.ok) return; } catch (e) {}
+  }
+  let liste = []; try { liste = JSON.parse(lsGet(LS_ARSIV) || "[]"); } catch (e) {}
+  liste.push(kayit); lsSet(LS_ARSIV, JSON.stringify(liste));
+}
+function toast(mesaj, tur) {
+  TOAST = { mesaj, tur: tur || "ok", yeni: true }; clearTimeout(TOAST_ZAMAN);
+  TOAST_ZAMAN = setTimeout(() => { TOAST = null; render(); }, 3500);
+  setTimeout(render, 0);
+}
+
+/* ================================================================== */
+/* Giriş / oturum                                                       */
+/* ================================================================== */
+function oturumAc(u) {
+  USER = u; ROLE = u.rol; MODALLAR = []; TOAST = null;
+  try { oturumDepo().setItem(SS_OTURUM, JSON.stringify(u)); } catch (e) {}
+}
+function oturumYukle() {
+  try {
+    const u = JSON.parse(oturumDepo().getItem(SS_OTURUM) || "null");
+    if (!u) return;
+    if (u.rol === "ogretmen" && !DB.teachers.find(t => t.id === u.teacherId)) return;
+    if (u.rol === "veli" && !DB.students.some(s => telEsit(s.veli && s.veli.tel, u.veliTel))) return;
+    USER = u; ROLE = u.rol;
+  } catch (e) {}
+}
+function girisYap() {
+  if (!DB) return;
+  const kimlik = LOGIN_EMAIL.trim().toLowerCase(), sifre = LOGIN_SIFRE.trim();
+  LOGIN_HATA = "";
+  if (!kimlik || !sifre) { LOGIN_HATA = "E-posta/telefon ve şifre gerekli."; render(); return; }
+  const p = DB.personel.find(x => x.email.toLowerCase() === kimlik && x.sifre === sifre);
+  if (p) { oturumAc({ rol:p.rol, ad:p.ad, unvan:p.unvan }); render(); return; }
+  const t = DB.teachers.find(x => (x.email||"").toLowerCase() === kimlik && x.sifre === sifre);
+  if (t) { oturumAc({ rol:"ogretmen", ad:t.ad, unvan:`${t.brans} Öğretmeni`, teacherId:t.id }); render(); return; }
+  if (sadeceRakam(kimlik).length >= 10) {
+    const cocuk = DB.students.filter(s => s.veli && telEsit(s.veli.tel, kimlik));
+    if (cocuk.length && cocuk.some(s => s.veli.sifre === sifre)) {
+      oturumAc({ rol:"veli", ad:cocuk[0].veli.ad, unvan:"Veli", veliTel:cocuk[0].veli.tel }); VELI_COCUK = cocuk[0].id; render(); return;
+    }
+  }
+  LOGIN_HATA = "Bilgiler hatalı. Lütfen kontrol edip tekrar deneyin."; render();
+}
+function demoDoldur(kimlik, sifre) { LOGIN_EMAIL = kimlik; LOGIN_SIFRE = sifre; LOGIN_HATA = ""; render(); }
+function cikisYap() { TOAST = null; USER = null; ROLE = null; MOBIL_MENU_ACIK = false; MODALLAR = []; LOGIN_SIFRE = ""; try { oturumDepo().removeItem(SS_OTURUM); } catch (e) {} render(); }
+function sifirlaVeriler() {
+  modalAc({ tip:"onay", baslik:"Demo verileri sıfırlansın mı?", mesaj:"Tüm kayıtlar demo başlangıç verisine döner. Bu işlem geri alınamaz.", buton:"Evet, sıfırla", aksiyon:"sifirlaOnayli()" });
+}
+async function sifirlaOnayli() {
+  DB = seedDb(); HATIRLATILDI = new Set(); AI = { risk:{}, matchSecili:null, matchDurum:{ loading:false, error:"", data:null } };
+  MODALLAR = []; TAKVIM_OGRETMEN = null; KASA_KART = null; KASA_SEPET = [];
+  await saveDb(); cikisYap();
+}
+
+/* ================================================================== */
+/* Genel aksiyonlar                                                     */
+/* ================================================================== */
+function setTab(t) { TABS[ROLE] = t; MOBIL_MENU_ACIK = false; MODALLAR = []; sunucudanYenile(); render(); window.scrollTo(0, 0); }
+function mobilMenuAc() { MOBIL_MENU_ACIK = true; render(); }
+function mobilMenuKapat() { MOBIL_MENU_ACIK = false; render(); }
+let MODAL_ANIM = false;
+function modalAc(m) { MODALLAR.push(m); MODAL_ANIM = true; render(); }
+function modalKapat() { MODALLAR.pop(); render(); }
+function modalGuncelle(alanlar) { Object.assign(MODALLAR[MODALLAR.length - 1], alanlar); render(); }
+function durumSet(k, v) {
+  if (k === "OGR_ARAMA") OGR_ARAMA = v; else if (k === "OGR_BRANS") OGR_BRANS = v;
+  else if (k === "FIN_FILTRE") FIN_FILTRE = v; else if (k === "FIN_ARAMA") FIN_ARAMA = v;
+  else if (k === "KART_ARAMA") KART_ARAMA = v; else if (k === "KASA_ARAMA") KASA_ARAMA = v;
+  else if (k === "OGRT_ARAMA") OGRT_ARAMA = v; else if (k === "VELI_COCUK") VELI_COCUK = v;
+  else if (k === "YENI_KART_TIP") YENI_KART_TIP = v; else if (k === "KASA_KOPYA") KASA_KOPYA = v;
+  else if (k === "YOKLAMA_TARIH") { YOKLAMA_TARIH = v; YOKLAMA_TEMP = {}; }
+  else if (k === "GELISIM_OGRENCI") GELISIM_OGRENCI = v; else if (k === "GELISIM_HAFTA") GELISIM_HAFTA = v;
+  else if (k === "TAKVIM_OGRETMEN") TAKVIM_OGRETMEN = v;
+  render();
+}
+function val(id) { const el = document.getElementById(id); return el ? el.value : ""; }
+
+/* ---------- Öğrenci detay & atama ---------- */
+function ogrenciAc(sid, sekme) { modalAc({ tip:"ogrenci", sid, sekme: sekme || "genel" }); }
+function ataOgretmen(sid, tid) {
+  const s = ogrenci(sid); const t = DB.teachers.find((x) => x.id === tid);
+  if (s) {
+    s.teacherId = tid || null; s.grup = t ? (t.grup || null) : null;
+    if (!t) { s.dersGunu = null; s.dersSaati = null; }
+    else if (t.grup) { const ark = DB.students.find(x => x.id !== s.id && x.teacherId === t.id && x.dersGunu); if (ark) { s.dersGunu = ark.dersGunu; s.dersSaati = ark.dersSaati; } }
+  }
+  AI.matchDurum = { loading:false, error:"", data:null };
+  saveDb(); toast(t ? `${s.ad} → ${t.ad} ataması yapıldı.` : "Öğretmen ataması kaldırıldı."); render();
+}
+function veliSifreYenile(sid) {
+  const s = ogrenci(sid); if (!s) return;
+  const yeni = sifreUret();
+  DB.students.filter(x => x.veli && telEsit(x.veli.tel, s.veli.tel)).forEach(x => x.veli.sifre = yeni);
+  saveDb(); toast("Yeni veli şifresi: " + yeni); render();
+}
+function ogrenciBilgiKaydet(sid) {
+  const s = ogrenci(sid); if (!s) return;
+  const ad = val("dzAd").trim(), yas = Number(val("dzYas")), veliAd = val("dzVeliAd").trim(), veliTel = val("dzVeliTel").trim();
+  if (!ad || !yas || !veliTel) { toast("Ad, yaş ve veli telefonu zorunlu.", "hata"); return; }
+  if (sadeceRakam(veliTel).length < 10) { toast("Veli telefonu en az 10 haneli olmalı.", "hata"); return; }
+  s.ad = ad; s.yas = yas; s.seviye = val("dzSeviye");
+  s.ilgiAlani = val("dzIlgi").trim(); s.beklenti = val("dzBeklenti").trim();
+  s.veli.ad = veliAd; s.veli.email = val("dzVeliEmail").trim();
+  if (!telEsit(s.veli.tel, veliTel)) {
+    s.veli.tel = sadeceRakam(veliTel).replace(/^(?!0)/, "0");
+    const kardes = DB.students.find(x => x.id !== s.id && x.veli && telEsit(x.veli.tel, s.veli.tel));
+    if (kardes) s.veli.sifre = kardes.veli.sifre;
+  }
+  saveDb(); modalGuncelle({ duzenle:false }); toast("Öğrenci bilgileri güncellendi.");
+}
+
+/* ---------- Kayıt silme (arşive taşıma) ---------- */
+function kayitSilSor(sid) {
+  const s = ogrenci(sid);
+  modalAc({ tip:"onay", tehlike:true, baslik:`${s.ad} kaydı silinsin mi?`,
+    mesaj:"Öğrenci panelden, listelerden ve raporlardan kaldırılır. Bilgileri (veli iletişimi, ödemeler, kart) görünmeyen bir arşivde saklanır ve daha sonra reklam/iletişim çalışmaları için dışa aktarılabilir.",
+    buton:"Evet, kaydı sil", aksiyon:`kayitSil('${sid}')` });
+}
+async function kayitSil(sid) {
+  const s = ogrenci(sid); if (!s) return;
+  const kart = s.kartNo ? kartBul(s.kartNo) : null;
+  await arsivle({
+    silinmeTarihi: simdi(), silen: USER ? USER.ad : "",
+    ogrenci: JSON.parse(JSON.stringify(s)),
+    ogretmen: ogretmenAd(s.teacherId),
+    kart: kart ? { ...kart, sonBakiye: kartBakiye(kart.no) } : null,
+    kartHareketleri: kart ? kartHareketleri(kart.no) : [],
+    telafiTalepleri: DB.makeupRequests.filter(r => r.studentId === sid),
+    dersAtamaTalepleri: DB.dersAtamaTalepleri.filter(r => r.studentId === sid),
+  });
+  DB.students = DB.students.filter(x => x.id !== sid);
+  if (kart) { DB.kartlar = DB.kartlar.filter(k => k.no !== kart.no); DB.kartHareketleri = DB.kartHareketleri.filter(h => h.kartNo !== kart.no); }
+  DB.makeupRequests = DB.makeupRequests.filter(r => r.studentId !== sid);
+  DB.dersAtamaTalepleri = DB.dersAtamaTalepleri.filter(r => r.studentId !== sid);
+  delete AI.risk[sid];
+  MODALLAR = [];
+  await saveDb(); toast(`${s.ad} kaydı silindi ve arşive alındı.`); render();
+}
+
+/* ---------- Ödemeler ---------- */
+function odemeAc(sid) { modalAc({ tip:"odeme", sid }); }
+function odemeKaydet(sid) {
+  const s = ogrenci(sid); if (!s) return;
+  const tutar = Number(val("odTutar")), tarih = val("odTarih"), yontem = val("odYontem"), not_ = val("odNot").trim();
+  const oz = odemeOzeti(s);
+  if (!tutar || tutar <= 0) { toast("Geçerli bir tutar girin.", "hata"); return; }
+  if (tutar > oz.kalan) { toast(`Tutar kalan borçtan (${TL(oz.kalan)}) fazla olamaz.`, "hata"); return; }
+  if (!tarih) { toast("Ödeme tarihini seçin.", "hata"); return; }
+  s.odemeler = s.odemeler || [];
+  s.odemeler.push({ id: yeniId("o"), tarih, tutar, yontem, not_, alan: USER.ad });
+  saveDb(); FORM_TEMIZLE = true; modalKapat();
+  toast(`${TL(tutar)} tahsil edildi — ${s.ad}.`);
+}
+function odemeSilSor(sid, oid) {
+  modalAc({ tip:"onay", tehlike:true, baslik:"Ödeme kaydı silinsin mi?", mesaj:"Yanlış girilen bir tahsilatı geri almak için kullanın.", buton:"Ödemeyi sil", aksiyon:`odemeSil('${sid}','${oid}')` });
+}
+function odemeSil(sid, oid) {
+  const s = ogrenci(sid); if (!s) return;
+  s.odemeler = s.odemeler.filter(p => p.id !== oid);
+  saveDb(); modalKapat(); toast("Ödeme kaydı silindi.");
+}
+function odemeTutarDoldur(t) { const el = document.getElementById("odTutar"); if (el) el.value = t; }
+function hatirlat(sid) { HATIRLATILDI.add(sid); toast("Hatırlatma veliye gönderildi (demo)."); render(); }
+
+/* ---------- Kafe kartları ---------- */
+function kartYukleAc(no) { modalAc({ tip:"kartYukle", no }); }
+function kartDetayAc(no) { modalAc({ tip:"kartDetay", no }); }
+function kartYukle(no) {
+  const tutar = Number(val("kyTutar")), yontem = val("kyYontem"), not_ = val("kyNot").trim();
+  if (!tutar || tutar <= 0) { toast("Geçerli bir tutar girin.", "hata"); return; }
+  DB.kartHareketleri.push({ id: yeniId("h"), kartNo: no, tarih: simdi(), tur:"yukleme", tutar, aciklama:`Bakiye yükleme — ${yontem}${not_ ? " · " + not_ : ""}`, kopya:null, islemYapan: USER.ad });
+  saveDb(); FORM_TEMIZLE = true; modalKapat();
+  toast(`${TL(tutar)} yüklendi. Yeni bakiye: ${TL(kartBakiye(no))}`);
+}
+function kyTutarDoldur(t) { const el = document.getElementById("kyTutar"); if (el) el.value = t; }
+function kartTipDegistir(no, tip) { const k = kartBul(no); if (k) { k.tip = tip; saveDb(); toast(`Kart tipi ${KART_TIPLERI[tip].ad} olarak güncellendi.`); render(); } }
+function kartDurumDegistir(no) { const k = kartBul(no); if (k) { k.aktif = !k.aktif; saveDb(); toast(k.aktif ? "Kart aktifleştirildi." : "Kart donduruldu — harcama yapılamaz."); render(); } }
+function kartYenile(no) {
+  modalAc({ tip:"onay", baslik:"Kart numarası yenilensin mi?", mesaj:"Kayıp/çalıntı durumunda kullanılır. Eski numara geçersiz olur, bakiye ve hareketler yeni numaraya taşınır. Veli ve öğrenci için 2 yeni kopya basılmalıdır.", buton:"Yeni numara üret", aksiyon:`kartYenileOnayli('${no}')` });
+}
+function kartYenileOnayli(eski) {
+  const k = kartBul(eski); if (!k) return;
+  const yeni = kartNoUret();
+  k.no = yeni; DB.kartHareketleri.forEach(h => { if (h.kartNo === eski) h.kartNo = yeni; });
+  const s = ogrenci(k.studentId); if (s) s.kartNo = yeni;
+  MODALLAR.pop(); const ust = MODALLAR[MODALLAR.length - 1]; if (ust && ust.no === eski) ust.no = yeni;
+  saveDb(); toast("Yeni kart numarası: " + kartNoGoster(yeni)); render();
+}
+
+/* ---------- Kasa (POS) ---------- */
+function kasaKartSec(no) { KASA_KART = no; KASA_SEPET = []; KASA_ARAMA = ""; render(); }
+function kasaKartNoIle() {
+  const no = sadeceRakam(val("kasaKartNo"));
+  const k = DB.kartlar.find(x => x.no === no);
+  if (!k) { toast("Bu numarada kart bulunamadı.", "hata"); return; }
+  kasaKartSec(no);
+}
+function kasaEkle(i) { KASA_SEPET.push(KAFE_MENU[i]); render(); }
+function kasaCikar(i) { KASA_SEPET.splice(i, 1); render(); }
+function kasaSerbestEkle() {
+  const ad = val("kasaSerbestAd").trim() || "Diğer", tutar = Number(val("kasaSerbestTutar"));
+  if (!tutar || tutar <= 0) { toast("Tutar girin.", "hata"); return; }
+  KASA_SEPET.push([ad, tutar]); FORM_TEMIZLE = true; render();
+}
+function kasaOde() {
+  const k = kartBul(KASA_KART); if (!k) return;
+  if (!k.aktif) { toast("Kart dondurulmuş, işlem yapılamaz.", "hata"); return; }
+  const toplam = KASA_SEPET.reduce((a, x) => a + x[1], 0);
+  if (!toplam) { toast("Sepet boş.", "hata"); return; }
+  const bakiye = kartBakiye(k.no);
+  if (toplam > bakiye) { toast(`Yetersiz bakiye. Bakiye: ${TL(bakiye)}, tutar: ${TL(toplam)}`, "hata"); return; }
+  const aciklama = KASA_SEPET.map(x => x[0]).join(", ");
+  DB.kartHareketleri.push({ id: yeniId("h"), kartNo:k.no, tarih: simdi(), tur:"harcama", tutar: toplam, aciklama, kopya: KASA_KOPYA, islemYapan: USER.ad });
+  KASA_SEPET = [];
+  saveDb(); toast(`${TL(toplam)} tahsil edildi. Kalan bakiye: ${TL(kartBakiye(k.no))}`); render();
+}
+
+/* ---------- Öğretmen yönetimi ---------- */
+function ogretmenFormAc(tid) { modalAc({ tip:"ogretmenForm", tid: tid || null }); }
+function ogretmenDetayAc(tid) { modalAc({ tip:"ogretmenDetay", tid }); }
+function ogretmenKaydet(tid) {
+  const ad = val("oAd").trim(), brans = val("oBrans"), email = val("oEmail").trim().toLowerCase(), sifre = val("oSifre").trim();
+  if (!ad || !brans || !email) { toast("Ad, branş ve e-posta zorunlu.", "hata"); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("Geçerli bir e-posta girin.", "hata"); return; }
+  const cakisma = DB.teachers.find(t => t.id !== tid && (t.email||"").toLowerCase() === email) || DB.personel.find(p => p.email.toLowerCase() === email);
+  if (cakisma) { toast("Bu e-posta başka bir hesapta kullanılıyor.", "hata"); return; }
+  const veri = {
+    ad, brans, email,
+    grup: grupDersiMi(brans) ? (val("oGrup").trim() || "Grup 1") : null,
+    uzmanlik: val("oUzmanlik").trim() || BRANS_BILGI[brans].uzmanlik,
+    tarz: val("oTarz").trim() || BRANS_BILGI[brans].tarz,
+    yasAraligi: val("oYas").trim() || BRANS_BILGI[brans].yasAraligi,
+    tecrube: Number(val("oTecrube")) || 0,
+    tel: val("oTel").trim(), baslangic: val("oBaslangic"), not_: val("oNot").trim(),
+  };
+  if (tid) {
+    const t = DB.teachers.find(x => x.id === tid);
+    const bransDegisti = t.brans !== brans, grupDegisti = t.grup !== veri.grup;
+    Object.assign(t, veri); if (sifre) t.sifre = sifre;
+    DB.students.filter(s => s.teacherId === tid).forEach(s => {
+      if (bransDegisti) { s.teacherId = null; s.grup = null; s.dersGunu = null; s.dersSaati = null; }
+      else if (grupDegisti) s.grup = veri.grup;
+    });
+    if (USER && USER.teacherId === tid) USER.ad = ad;
+    toast(bransDegisti ? "Öğretmen güncellendi. Branş değiştiği için eski öğrencilerin ataması kaldırıldı." : "Öğretmen bilgileri güncellendi.");
+  } else {
+    if (!sifre || sifre.length < 6) { toast("Yeni öğretmen için en az 6 karakterli şifre belirleyin.", "hata"); return; }
+    DB.teachers.push({ id: yeniId("t"), ...veri, sifre, kurumYoklama: [] });
+    toast(`${ad} öğretmen olarak eklendi. Giriş: ${email}`);
+  }
+  saveDb(); FORM_TEMIZLE = true; MODALLAR.pop(); render();
+}
+function ogretmenSilSor(tid) {
+  const t = DB.teachers.find(x => x.id === tid); const n = DB.students.filter(s => s.teacherId === tid).length;
+  modalAc({ tip:"onay", tehlike:true, baslik:`${t.ad} silinsin mi?`, mesaj: n ? `Bu öğretmenin ${n} öğrencisi var. Silindiğinde bu öğrenciler "atanmamış" duruma geçer ve ders saatleri boşalır.` : "Öğretmen kaydı ve giriş hesabı kaldırılır.", buton:"Öğretmeni sil", aksiyon:`ogretmenSil('${tid}')` });
+}
+function ogretmenSil(tid) {
+  const t = DB.teachers.find(x => x.id === tid);
+  DB.students.filter(s => s.teacherId === tid).forEach(s => { s.teacherId = null; s.grup = null; s.dersGunu = null; s.dersSaati = null; });
+  DB.teachers = DB.teachers.filter(x => x.id !== tid);
+  DB.dersAtamaTalepleri = DB.dersAtamaTalepleri.filter(r => !(r.teacherId === tid && r.durum === "beklemede"));
+  if (TAKVIM_OGRETMEN === tid) TAKVIM_OGRETMEN = null;
+  MODALLAR = []; saveDb(); toast(`${t.ad} silindi.`); render();
+}
+function kurumYoklamaEkle(tid, d) {
+  const t = DB.teachers.find(x => x.id === tid); if (!t) return;
+  const tarih = val("kyTarih") || bugun();
+  t.kurumYoklama = (t.kurumYoklama || []).filter(x => x[0] !== tarih);
+  t.kurumYoklama.push([tarih, d]); t.kurumYoklama.sort((a,b)=>a[0].localeCompare(b[0]));
+  saveDb(); toast(`${t.ad}: ${tarihTR(tarih)} ${d === "var" ? "geldi" : "gelmedi"} olarak işlendi.`); render();
+}
+
+/* ---------- Takvim ---------- */
+function dersEkleAdmin() {
+  const sid = val("takvimOgrenci"), gun = val("takvimGun"), saat = val("takvimSaat");
+  if (!sid || !TAKVIM_OGRETMEN) { toast("Lütfen öğrenci, gün ve saat seçin.", "hata"); return; }
+  const s = ogrenci(sid), t = DB.teachers.find((x) => x.id === TAKVIM_OGRETMEN);
+  if (!t.grup) {
+    const dolu = DB.students.find(x => x.id !== sid && x.teacherId === t.id && x.dersGunu === gun && x.dersSaati === saat);
+    if (dolu) { toast(`${gun} ${saat} saatinde ${dolu.ad} zaten var.`, "hata"); return; }
+  }
+  s.teacherId = t.id; s.grup = t.grup || null; s.dersGunu = gun; s.dersSaati = saat;
+  saveDb(); toast("Ders eklendi."); render();
+}
+function dersSil(sid) {
+  const s = ogrenci(sid);
+  if (s) { s.teacherId = null; s.grup = null; s.dersGunu = null; s.dersSaati = null; }
+  saveDb(); toast("Ders kaldırıldı."); render();
+}
+
+/* ---------- Excel ---------- */
+function xlsIndir(dosyaAdi, govde) {
+  const icerik = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"></head><body>${govde}</body></html>`;
+  const blob = new Blob(["﻿" + icerik], { type:"application/vnd.ms-excel" });
+  if (NATIVE) { dosyaPaylas(dosyaAdi.endsWith(".xls") ? dosyaAdi : dosyaAdi + ".xls", blob); return; }
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = dosyaAdi.endsWith(".xls") ? dosyaAdi : dosyaAdi + ".xls";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function xlsTablo(baslik, headers, rows) {
+  const h = (c) => esc(String(c === null || c === undefined || c === "" ? "-" : c));
+  return `${baslik ? `<h3 style="font-family:sans-serif;">${esc(baslik)}</h3>` : ""}<table border="1"><thead><tr>${headers.map(x=>`<th>${esc(x)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.length ? rows.map(r=>`<tr>${r.map(c=>`<td>${h(c)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}">Kayıt yok</td></tr>`}</tbody></table><br/>`;
+}
+function disaAktarMaliTablo() {
+  const ozet = DB.students.map(s => { const o = odemeOzeti(s); return [s.ad, s.brans, s.veli.ad, telGoster(s.veli.tel), s.kayitUcreti, `${o.odenenTaksit}/${s.taksitSayisi}`, o.odenen, o.kalan, o.geciken, o.durum]; });
+  const tahsilat = DB.students.flatMap(s => (s.odemeler||[]).map(p => [tarihTR(p.tarih), s.ad, p.tutar, p.yontem, p.alan, p.not_])).sort((a,b)=>b[0].localeCompare(a[0]));
+  xlsIndir("mali_tablo", xlsTablo("Öğrenci Bazında Durum", ["Öğrenci","Branş","Veli","Telefon","Kayıt Ücreti","Taksit","Ödenen","Kalan","Geciken Taksit","Durum"], ozet)
+    + xlsTablo("Tahsilat Kayıtları", ["Tarih","Öğrenci","Tutar","Yöntem","Tahsil Eden","Not"], tahsilat));
+}
+function disaAktarYoklama() {
+  xlsIndir("yoklama_kayitlari", xlsTablo("", ["Öğrenci","Branş","Tarih","Durum"], DB.students.flatMap((s)=>s.devam.map((d)=>[s.ad, s.brans, tarihTR(d[0]), d[1] === "var" ? "Geldi" : "Gelmedi"]))));
+}
+function disaAktarKartlar() {
+  xlsIndir("kafe_kartlari", xlsTablo("Kartlar", ["Kart No","Tip","Öğrenci","Veli","Bakiye","Durum"], DB.kartlar.map(k => { const s = ogrenci(k.studentId); return [kartNoGoster(k.no), KART_TIPLERI[k.tip].ad, s ? s.ad : "-", s ? s.veli.ad : "-", kartBakiye(k.no), k.aktif ? "Aktif" : "Donduruldu"]; }))
+    + xlsTablo("Hareketler", ["Tarih","Kart No","Öğrenci","İşlem","Tutar","Açıklama","Kullanan Kopya","İşlemi Yapan"], [...DB.kartHareketleri].sort((a,b)=>b.tarih.localeCompare(a.tarih)).map(h => { const k = kartBul(h.kartNo); const s = k && ogrenci(k.studentId); return [tarihTR(h.tarih), kartNoGoster(h.kartNo), s ? s.ad : "-", h.tur === "yukleme" ? "Yükleme" : "Harcama", h.tutar, h.aciklama, h.kopya || "-", h.islemYapan]; })));
+}
+function disaAktarOgrenciDetay(sid) {
+  const s = ogrenci(sid); if (!s) return;
+  const o = odemeOzeti(s); const kart = s.kartNo ? kartBul(s.kartNo) : null;
+  xlsIndir("ogrenci_" + slug(s.ad),
+    xlsTablo("Genel Bilgiler", ["Alan","Değer"], [["Ad Soyad", s.ad], ["Yaş", s.yas], ["Branş", s.brans], ["Grup", s.grup || "Bireysel"], ["Seviye", s.seviye], ["Kayıt Tarihi", tarihTR(s.kayitTarihi)], ["Öğretmen", ogretmenAd(s.teacherId) || "Atanmadı"], ["Ders Günü/Saati", s.dersGunu ? `${s.dersGunu} ${s.dersSaati}` : "-"], ["İlgi Alanı", s.ilgiAlani], ["Beklenti", s.beklenti]])
+    + xlsTablo("Veli", ["Alan","Değer"], [["Veli Adı", s.veli.ad], ["Telefon", telGoster(s.veli.tel)], ["E-posta", s.veli.email]])
+    + xlsTablo("Taksit Planı", ["No","Vade","Tutar","Durum"], o.plan.map(p => [p.no, tarihTR(p.vade), p.tutar, p.durum]))
+    + xlsTablo("Tahsilatlar", ["Tarih","Tutar","Yöntem","Tahsil Eden","Not"], (s.odemeler||[]).map(p => [tarihTR(p.tarih), p.tutar, p.yontem, p.alan, p.not_]))
+    + xlsTablo("Kafe Kartı", ["Alan","Değer"], kart ? [["Kart No", kartNoGoster(kart.no)], ["Tip", KART_TIPLERI[kart.tip].ad], ["Bakiye", kartBakiye(kart.no)]] : [])
+    + xlsTablo("Kart Hareketleri", ["Tarih","İşlem","Tutar","Açıklama","Kopya"], kart ? kartHareketleri(kart.no).map(h => [tarihTR(h.tarih), h.tur === "yukleme" ? "Yükleme" : "Harcama", h.tutar, h.aciklama, h.kopya || "-"]) : [])
+    + xlsTablo("Veli Görüşme Notları", ["Soru","Cevap"], (s.veliSoruCevap||[]).map(qa => [qa[0], qa[1]]))
+    + xlsTablo("Haftalık Gelişim Notları", ["Hafta","Not","Puan"], s.haftalikNotlar.map(n => [n[0], n[1], n[2]]))
+    + xlsTablo("Devam Kayıtları", ["Tarih","Durum"], s.devam.map(d => [tarihTR(d[0]), d[1] === "var" ? "Geldi" : "Gelmedi"])));
+}
+
+/* ---------- Öğretmen işlemleri ---------- */
+function toggleYoklama(sid, d) { YOKLAMA_TEMP[sid] = d; render(); }
+function hepsiVar(ids) { ids.split(",").forEach(id => YOKLAMA_TEMP[id] = "var"); render(); }
+function kaydetYoklama() {
+  const ids = Object.keys(YOKLAMA_TEMP);
+  if (!ids.length) { toast("Önce öğrencileri işaretleyin.", "hata"); return; }
+  ids.forEach((sid) => {
+    const s = ogrenci(sid);
+    if (s) { s.devam = s.devam.filter(d => d[0] !== YOKLAMA_TARIH); s.devam.push([YOKLAMA_TARIH, YOKLAMA_TEMP[sid]]); s.devam.sort((a,b)=>a[0].localeCompare(b[0])); }
+  });
+  YOKLAMA_TEMP = {}; saveDb(); toast(`${tarihTR(YOKLAMA_TARIH)} yoklaması kaydedildi.`); render();
+}
+function kaydetGelisimNotu() {
+  const sid = GELISIM_OGRENCI, not_ = val("gelisimNot").trim(), puan = Number(val("gelisimPuan"));
+  if (!GELISIM_HAFTA || !not_) { toast("Lütfen hafta ve not alanlarını doldurun.", "hata"); return; }
+  const s = ogrenci(sid); const hafta = haftaEtiketi(GELISIM_HAFTA);
+  if (s) { s.haftalikNotlar = s.haftalikNotlar.filter(n => n[0] !== hafta); s.haftalikNotlar.push([hafta, not_, puan]); }
+  saveDb(); FORM_TEMIZLE = true; toast("Gelişim notu kaydedildi."); render();
+}
+function gonderTelafiTalebi(teacherId) {
+  const sid = val("telafiOgrenci"), dersTarihi = datetimeGoster(val("telafiDersTarihi")), sebep = val("telafiSebep").trim(), onerilenTarih = datetimeGoster(val("telafiOnerilenTarih"));
+  if (!sid || !dersTarihi || !sebep || !onerilenTarih) { toast("Lütfen tüm alanları doldurun.", "hata"); return; }
+  DB.makeupRequests.push({ id: yeniId("m"), studentId: sid, ogretmenId: teacherId, dersTarihi, sebep, onerilenTarih, durum:"beklemede" });
+  saveDb(); FORM_TEMIZLE = true; toast("Telafi talebi sekretere iletildi."); render();
+}
+function telafiDurumDegistir(id, d) { const r = DB.makeupRequests.find((x) => x.id === id); if (r) r.durum = d; saveDb(); toast(`Telafi talebi ${d}.`); render(); }
+function gonderDersAtamaTalebi() {
+  const studentId = val("dersAtamaOgrenci"), teacherId = val("dersAtamaOgretmen"), tarih = datetimeGoster(val("dersAtamaTarihi")), not_ = val("dersAtamaNot").trim();
+  if (!studentId || !teacherId || !tarih) { toast("Lütfen öğrenci, öğretmen ve ders tarihi/saatini seçin.", "hata"); return; }
+  const s = ogrenci(studentId), t = DB.teachers.find(x => x.id === teacherId);
+  if (s.brans !== t.brans) { toast(`Branş uyuşmuyor: öğrenci ${s.brans}, öğretmen ${t.brans}.`, "hata"); return; }
+  DB.dersAtamaTalepleri.push({ id: yeniId("d"), studentId, teacherId, tarih, not_, durum:"beklemede" });
+  saveDb(); FORM_TEMIZLE = true; toast("Ders atama talebi yöneticiye iletildi."); render();
+}
+function dersAtamaDurumDegistir(id, d) {
+  const r = DB.dersAtamaTalepleri.find((x) => x.id === id); if (!r) return;
+  r.durum = d;
+  if (d === "onaylandı") {
+    const s = ogrenci(r.studentId), t = DB.teachers.find((x) => x.id === r.teacherId);
+    if (s && t) { const [tk, sk] = r.tarih.split(" "); s.teacherId = t.id; s.grup = t.grup || null; s.dersGunu = gunAdi(tk); s.dersSaati = sk || s.dersSaati; }
+  }
+  saveDb(); toast(`Talep ${d}.`); render();
+}
+
+/* ---------- Yeni öğrenci kaydı ---------- */
+function yeniBransDegisti(b) { const u = document.getElementById("yeniUcret"); if (u && BRANS_BILGI[b]) u.value = BRANS_BILGI[b].ucret; }
+function kaydetYeniOgrenci() {
+  const ad = val("yeniAd").trim(), yas = Number(val("yeniYas")), brans = val("yeniBrans"), kayitTarihi = val("yeniTarih");
+  const kayitUcreti = Number(val("yeniUcret")), taksitSayisi = Number(val("yeniTaksit"));
+  const veliAd = val("yeniVeliAd").trim(), veliTel = val("yeniVeliTel").trim(), veliEmail = val("yeniVeliEmail").trim();
+  const ilkOdeme = Number(val("yeniIlkOdeme")) || 0, ilkBakiye = Number(val("yeniIlkBakiye")) || 0;
+  if (!ad || !yas || !kayitTarihi || !kayitUcreti || !veliAd || !veliTel) { toast("Lütfen * işaretli tüm alanları doldurun.", "hata"); return; }
+  if (sadeceRakam(veliTel).length < 10) { toast("Veli telefonu en az 10 haneli olmalı.", "hata"); return; }
+  if (ilkOdeme > kayitUcreti) { toast("Peşinat kayıt ücretinden fazla olamaz.", "hata"); return; }
+  const veliSoruCevap = VELI_SORULARI.map((soru, i) => [soru, val("veliCevap" + i).trim()]).filter((qa) => qa[1]);
+  const tel = sadeceRakam(veliTel).replace(/^(?!0)/, "0");
+  const kardes = DB.students.find(s => s.veli && telEsit(s.veli.tel, tel));
+  const veliSifre = kardes ? kardes.veli.sifre : sifreUret();
+  const no = kartNoUret();
+  const s = {
+    id: yeniId("s"), ad, yas, brans, grup:null, kayitTarihi, kayitUcreti, taksitSayisi,
+    odemeler: ilkOdeme > 0 ? [{ id: yeniId("o"), tarih: kayitTarihi, tutar: ilkOdeme, yontem: val("yeniIlkOdemeYontem"), not_:"Kayıt peşinatı", alan: USER.ad }] : [],
+    teacherId:null, dersGunu:null, dersSaati:null,
+    ilgiAlani: veliSoruCevap[0] ? veliSoruCevap[0][1] : "", beklenti: veliSoruCevap.length ? veliSoruCevap[veliSoruCevap.length-1][1] : "",
+    seviye: val("yeniSeviye") || "Başlangıç", veliSoruCevap, haftalikNotlar:[], devam:[],
+    veli: { ad: veliAd, tel, email: veliEmail, sifre: veliSifre }, kartNo: no,
+  };
+  DB.students.push(s);
+  DB.kartlar.push({ no, tip: YENI_KART_TIP, studentId: s.id, olusturma: kayitTarihi, aktif: true });
+  if (ilkBakiye > 0) DB.kartHareketleri.push({ id: yeniId("h"), kartNo: no, tarih: simdi(), tur:"yukleme", tutar: ilkBakiye, aciklama:"Açılış bakiyesi", kopya:null, islemYapan: USER.ad });
+  saveDb(); FORM_TEMIZLE = true;
+  modalAc({ tip:"kayitSonuc", sid: s.id, kardes: !!kardes });
+}
+
+/* ---------- AI ---------- */
+function eslestirSec(sid) { AI.matchSecili = sid; AI.matchDurum = { loading:false, error:"", data:null }; render(); }
+async function eslestirBul() {
+  AI.matchDurum = { loading:true, error:"", data:null }; render();
+  try { AI.matchDurum = { loading:false, error:"", data: await aiOgretmenEslestir(ogrenci(AI.matchSecili), DB.teachers) }; }
+  catch (e) { AI.matchDurum = { loading:false, error:"Eşleştirme alınamadı: " + (e && e.message ? e.message : "bilinmeyen hata"), data:null }; }
+  render();
+}
+async function analizEt(sid) {
+  AI.risk[sid] = { loading:true }; render();
+  try { AI.risk[sid] = { loading:false, data: await aiRiskAnaliz(ogrenci(sid)) }; }
+  catch (e) { AI.risk[sid] = { loading:false, error:"Analiz alınamadı: " + (e && e.message ? e.message : "bilinmeyen hata") }; }
+  render();
+}
+
+/* ================================================================== */
+/* İkonlar ve ortak UI parçaları                                        */
+/* ================================================================== */
+const IKON = {
+  dashboard:'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  cap:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  wallet:'<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+  check:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  repeat:'<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  clipboard:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  sparkles:'<path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  card:'<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+  coffee:'<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/>',
+  userplus:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  trend:'<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  menu:'<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
+  search:'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  trash:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+  user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  phone:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.18 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.1 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
+  alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  printer:'<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+  key:'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>',
+  home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  cart:'<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+  ban:'<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+};
+function ikon(ad, cls) { return `<svg class="${cls || "w-4 h-4"} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IKON[ad] || ""}</svg>`; }
+
+const INP = "w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-gold/40 focus:border-gold/50";
+const BTN = {
+  p: "inline-flex items-center justify-center gap-2 bg-gold hover:bg-gold2 text-black font-medium rounded-lg px-4 py-2 text-sm transition active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none",
+  s: "inline-flex items-center justify-center gap-1.5 bg-soft hover:bg-accent text-neutral-200 border border-line rounded-lg px-3 py-1.5 text-xs transition",
+  g: "inline-flex items-center justify-center gap-1.5 hover:bg-accent text-mut hover:text-neutral-100 rounded-lg px-3 py-1.5 text-xs transition",
+  d: "inline-flex items-center justify-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 rounded-lg px-3 py-1.5 text-xs transition",
+  ok: "inline-flex items-center justify-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg px-3 py-1.5 text-xs transition",
+  v: "inline-flex items-center justify-center gap-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border border-violet-500/30 rounded-lg px-3 py-1.5 text-xs transition disabled:opacity-40",
+};
+function lbl(t, zorunlu) { return `<label class="text-xs text-mut mb-1.5 block">${esc(t)}${zorunlu ? ' <span class="text-gold">*</span>' : ""}</label>`; }
+function badge(tone, text) {
+  const tones = {
+    neutral:"bg-neutral-400/15 text-neutral-300", success:"bg-green-400/20 text-green-400", warning:"bg-yellow-400/20 text-yellow-400",
+    danger:"bg-red-400/20 text-red-400", violet:"bg-violet-400/20 text-violet-300", gold:"bg-gold/20 text-gold", info:"bg-sky-400/20 text-sky-300", orange:"bg-orange-400/20 text-orange-400",
+  };
+  return `<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded whitespace-nowrap ${tones[tone] || tones.neutral}">${esc(text)}</span>`;
+}
+function bransBadge(b) { const r = bransRenk(b); return `<span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap" style="background-color:${r}30;color:${r}">${esc(b)}</span>`; }
+const ODEME_TONE = { "tamamlandı":"success", "güncel":"info", "gecikmiş":"danger" };
+const TAKSIT_TONE = { "ödendi":"success", "gecikti":"danger", "bekliyor":"warning", "kısmi":"orange" };
+const TALEP_TONE = { beklemede:"warning", "onaylandı":"success", reddedildi:"danger" };
+function staff(cls) { return `<div class="${cls || "mt-2"} space-y-0.5">${[0,1,2,3,4].map(()=>'<div class="staff"></div>').join("")}</div>`; }
+function sayfaBaslik(baslik, vurgu, alt, sag) {
+  return `<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+    <div class="min-w-0">
+      <h1 class="font-display text-2xl font-bold text-neutral-50 tracking-tight">${esc(baslik)}${vurgu ? ` <span class="text-gold">${esc(vurgu)}</span>` : ""}</h1>
+      ${alt ? `<p class="text-sm text-mut mt-1">${esc(alt)}</p>` : ""}
+      <div class="mt-2 flex gap-0.5 w-48">${[0,1,2,3,4].map(()=>'<div class="staff flex-1"></div>').join("")}</div>
+    </div>
+    ${sag ? `<div class="flex flex-wrap gap-2">${sag}</div>` : ""}
+  </div>`;
+}
+function card(inner, extra) { return `<div class="bg-card rounded-xl border border-line p-5 ${extra || ""}">${inner}</div>`; }
+function cardBaslik(ik, t, sag) { return `<div class="flex items-center justify-between gap-3 mb-4"><h3 class="font-display text-lg font-semibold text-neutral-50 flex items-center gap-2">${ik ? `<span class="text-gold">${ikon(ik, "w-5 h-5")}</span>` : ""}${esc(t)}</h3>${sag || ""}</div>`; }
+function statCard(ik, renk, label, value, sub, tik) {
+  return `<div ${tik ? `onclick="${tik}"` : ""} class="bg-card rounded-xl p-4 sm:p-5 border border-line hover:border-gold/30 transition-all duration-300 hover:shadow-lg hover:shadow-gold/5 min-w-0 ${tik ? "cursor-pointer" : ""}">
+    <div class="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+      <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0" style="background-color:${renk}20;color:${renk}">${ikon(ik, "w-4 h-4 sm:w-5 sm:h-5")}</div>
+      <span class="text-xs sm:text-sm text-mut leading-tight">${esc(label)}</span>
+    </div>
+    <div class="text-lg sm:text-2xl font-display font-bold text-neutral-50 count-up truncate">${esc(value)}</div>
+    ${sub ? `<p class="text-[11px] sm:text-xs text-mut mt-1 line-clamp-2">${esc(sub)}</p>` : ""}
+  </div>`;
+}
+function satir(sol, sag, tik) { return `<div ${tik ? `onclick="${tik}"` : ""} class="flex items-center justify-between gap-3 p-3 bg-bg rounded-lg ${tik ? "hover:bg-accent cursor-pointer" : ""} transition-colors">${sol}${sag}</div>`; }
+function bos(t) { return `<div class="text-center py-8 text-sm text-mut">${esc(t)}</div>`; }
+function tablo(basliklar, satirlar, bosMesaj) {
+  return `<div class="overflow-x-auto"><table class="w-full">
+    <thead><tr class="text-left text-xs uppercase tracking-wider text-mut border-b border-line">${basliklar.map(b=>`<th class="px-4 py-3 font-medium whitespace-nowrap">${b}</th>`).join("")}</tr></thead>
+    <tbody>${satirlar || `<tr><td colspan="${basliklar.length}">${bos(bosMesaj || "Kayıt bulunamadı.")}</td></tr>`}</tbody></table></div>`;
+}
+const TD = "px-4 py-3 text-sm";
+function aramaKutusu(state, deger, ph) {
+  return `<div class="relative w-full sm:w-64"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-mut">${ikon("search","w-4 h-4")}</span>
+    <input id="ara_${state}" value="${esc(deger)}" oninput="durumSet('${state}', this.value)" placeholder="${esc(ph)}" class="${INP} pl-9" /></div>`;
+}
+function chipler(state, secili, secenekler) {
+  return `<div class="flex flex-wrap gap-1.5">${secenekler.map(([v, t, n]) => `<button onclick="durumSet('${state}','${v}')" class="text-xs px-3 py-1.5 rounded-lg border transition ${secili === v ? "bg-gold/15 border-gold/40 text-gold" : "border-line text-mut hover:text-neutral-200 hover:bg-accent"}">${esc(t)}${n !== undefined ? ` <span class="opacity-70">${n}</span>` : ""}</button>`).join("")}</div>`;
+}
+function puanNoktalari(p) { return `<div class="flex items-center gap-1">${[1,2,3,4,5].map(i=>`<div class="w-2 h-2 rounded-full ${i <= p ? "bg-gold" : "bg-line"}"></div>`).join("")}<span class="text-xs text-gold ml-1">${p}/5</span></div>`; }
+function devamSeridi(devam) {
+  if (!devam.length) return '<p class="text-xs text-mut">Henüz yoklama kaydı yok.</p>';
+  const son = devam.slice(-20);
+  return `<div class="flex gap-1">${son.map(([t, d]) => `<div title="${tarihTR(t)}: ${d === "var" ? "Geldi" : "Gelmedi"}" class="h-3 flex-1 rounded-full ${d === "var" ? "bg-green-500" : "bg-red-500"}"></div>`).join("")}</div>
+    <div class="flex justify-between text-xs text-mut mt-1"><span>${tarihTR(son[0][0])}</span><span>${tarihTR(son[son.length-1][0])}</span></div>`;
+}
+
+/* ---------- Kafe kartı görseli ---------- */
+function kartGorsel(kart, kopya, sahip, kucuk) {
+  const tip = KART_TIPLERI[kart.tip] || KART_TIPLERI.silver;
+  return `<div class="kart relative rounded-2xl overflow-hidden shadow-xl w-full ${kucuk ? "max-w-[300px]" : "max-w-[340px]"} aspect-[1.586/1] select-none ${kart.aktif === false ? "grayscale opacity-60" : ""}" style="background:${tip.bg};color:${tip.yazi}">
+    <div class="absolute inset-0 kart-parilti"></div>
+    <div class="absolute inset-0 flex flex-col justify-between" style="padding:7cqw">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-center min-w-0" style="gap:3cqw">
+          <div class="rounded-lg flex items-center justify-center shrink-0" style="width:10cqw;height:10cqw;background:${tip.vurgu}22">${ikon("music","w-1/2 h-1/2")}</div>
+          <div class="leading-tight min-w-0"><p class="font-display font-bold whitespace-nowrap" style="font-size:5cqw">7Sanat Kafe</p><p class="opacity-75 whitespace-nowrap" style="font-size:3.2cqw">Afyon Sanat Akademisi</p></div>
+        </div>
+        <span class="font-semibold uppercase rounded shrink-0" style="font-size:3.2cqw;letter-spacing:.2em;padding:.6cqw 2cqw;background:${tip.vurgu}26">${tip.ad}</span>
+      </div>
+      <div class="rounded-md" style="width:13cqw;height:9cqw;background:linear-gradient(135deg,#f5d77a,#b8923a);box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)"></div>
+      <div>
+        <p class="font-mono whitespace-nowrap" style="font-size:6.4cqw;letter-spacing:.08em">${kartNoGoster(kart.no)}</p>
+        <div class="flex items-end justify-between gap-2" style="margin-top:1.5cqw">
+          <p class="font-medium truncate" style="font-size:3.8cqw">${esc(sahip || "")}</p>
+          <p class="font-semibold uppercase opacity-80 whitespace-nowrap" style="font-size:3cqw;letter-spacing:.15em">${esc(kopya)} KARTI</p>
+        </div>
+      </div>
+    </div>
+    ${kart.aktif === false ? '<div class="absolute inset-0 flex items-center justify-center"><span class="bg-black/70 text-white text-xs px-3 py-1 rounded">DONDURULDU</span></div>' : ""}
+  </div>`;
+}
+function kartIkiKopya(kart, s) {
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 justify-items-center">
+    ${kartGorsel(kart, "Veli", s ? s.veli.ad : "", true)}${kartGorsel(kart, "Öğrenci", s ? s.ad : "", true)}
+  </div>`;
+}
+function hareketListesi(no, limit) {
+  const liste = kartHareketleri(no).slice(0, limit || 999);
+  if (!liste.length) return bos("Henüz kart hareketi yok.");
+  return `<div class="space-y-2">${liste.map(h => satir(
+    `<div class="flex items-center gap-3 min-w-0"><div class="w-8 h-8 rounded-lg flex items-center justify-center ${h.tur === "yukleme" ? "bg-green-400/15 text-green-400" : "bg-gold/15 text-gold"}">${ikon(h.tur === "yukleme" ? "wallet" : "coffee", "w-4 h-4")}</div>
+      <div class="min-w-0"><p class="text-sm text-neutral-100 truncate">${esc(h.aciklama)}</p><p class="text-xs text-mut">${tarihTR(h.tarih)}${h.kopya ? ` · ${esc(h.kopya)} kartı` : ""}${h.islemYapan ? ` · ${esc(h.islemYapan)}` : ""}</p></div></div>`,
+    `<span class="text-sm font-medium whitespace-nowrap ${h.tur === "yukleme" ? "text-green-400" : "text-neutral-200"}">${h.tur === "yukleme" ? "+" : "−"}${TL(h.tutar)}</span>`)).join("")}</div>`;
+}
+
+/* ================================================================== */
+/* Giriş ekranı                                                         */
+/* ================================================================== */
+function loginScreenHtml() {
+  const ornekVeli = DB && DB.students[0];
+  const demolar = [
+    ["Yönetici", "admin@7sanat.com", "admin123"], ["Sekreter", "sekreter@7sanat.com", "sekreter123"],
+    ["Öğretmen", "ayse@7sanat.com", "ogretmen123"], ["Kasa", "kasa@7sanat.com", "kasa123"],
+  ];
+  if (ornekVeli) demolar.push(["Veli", ornekVeli.veli.tel, ornekVeli.veli.sifre]);
+  return `
+  <div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 pt-safe">
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 rounded-2xl bg-gold/20 text-gold flex items-center justify-center mx-auto mb-4">${ikon("music","w-8 h-8")}</div>
+      <h1 class="font-display text-3xl font-bold text-gold">7Sanat</h1>
+      <p class="text-mut mt-1">Afyon Sanat Akademisi</p>
+      <div class="w-72 mx-auto">${staff("mt-4")}</div>
+    </div>
+    <form onsubmit="event.preventDefault(); girisYap(); return false;" class="w-full max-w-md bg-card border border-line rounded-xl p-6">
+      <h2 class="font-display text-xl font-semibold text-neutral-50 mb-5">Giriş Yap</h2>
+      ${lbl("E-posta veya Telefon")}
+      <input id="girisKimlik" value="${esc(LOGIN_EMAIL)}" oninput="LOGIN_EMAIL=this.value" placeholder="admin@7sanat.com veya 05xx xxx xx xx" autocomplete="username" class="${INP} py-2.5" />
+      <p class="text-xs text-mut mt-1.5 mb-4">Veliler telefon numarası ile giriş yapar.</p>
+      ${lbl("Şifre")}
+      <div class="relative">
+        <input id="girisSifre" type="${SIFRE_GOSTER ? "text" : "password"}" value="${esc(LOGIN_SIFRE)}" oninput="LOGIN_SIFRE=this.value" placeholder="••••••••" autocomplete="current-password" class="${INP} py-2.5 pr-10" />
+        <button type="button" onclick="SIFRE_GOSTER=!SIFRE_GOSTER; render()" class="absolute right-3 top-1/2 -translate-y-1/2 text-mut hover:text-neutral-200">${ikon("eye")}</button>
+      </div>
+      ${LOGIN_HATA ? `<p class="text-xs text-red-400 mt-3">${esc(LOGIN_HATA)}</p>` : ""}
+      <button type="submit" ${DB ? "" : "disabled"} class="${BTN.p} w-full mt-5 py-2.5">${DB ? "Giriş Yap" : "Yükleniyor..."}</button>
+    </form>
+    ${DB && DEMO_MODU ? `<div class="w-full max-w-md mt-4 bg-card/60 border border-dashed border-line rounded-xl p-4">
+      <p class="text-xs text-mut mb-2">Demo hesaplar — tıklayınca bilgiler doldurulur:</p>
+      <div class="flex flex-wrap gap-1.5">${demolar.map(([r, k, s]) => `<button type="button" onclick="demoDoldur('${esc(k)}','${esc(s)}')" class="${BTN.s}">${esc(r)}</button>`).join("")}</div>
+    </div>` : ""}
+    ${NATIVE ? `<p class="text-xs text-mut mt-6">Sunucu: ${esc(API_BASE.replace(/^https?:\/\//, ""))} · <button type="button" onclick="sunucuDegistir()" class="text-gold">Değiştir</button></p>` : ""}
+    <p class="text-xs text-mut mt-3">© ${new Date().getFullYear()} 7Sanat Afyon — Tüm hakları saklıdır</p>
+  </div>`;
+}
+
+/* ================================================================== */
+/* Yönetici sayfaları                                                   */
+/* ================================================================== */
+function adminOverviewHtml() {
+  const { students, teachers } = DB;
+  const bekleyenTelafi = DB.makeupRequests.filter(r => r.durum === "beklemede").length;
+  const bekleyenAtama = DB.dersAtamaTalepleri.filter(r => r.durum === "beklemede").length;
+  const ozetler = students.map(s => ({ s, o: odemeOzeti(s) }));
+  const gecikenTaksit = ozetler.reduce((a, x) => a + x.o.geciken, 0);
+  const buAy = bugun().slice(0, 7);
+  const aylikTahsilat = students.reduce((a, s) => a + (s.odemeler||[]).filter(p => p.tarih.startsWith(buAy)).reduce((b, p) => b + p.tutar, 0), 0);
+  const haftalikDers = students.filter(s => s.teacherId && s.dersGunu).length;
+  const bransMap = {}; students.forEach((s) => (bransMap[s.brans] = (bransMap[s.brans] || 0) + 1));
+  const maxBrans = Math.max(1, ...Object.values(bransMap));
+  const risk = ozetler.map(({ s, o }) => ({ s, o, dev: s.devam.slice(-8).filter(d => d[1] === "yok").length }))
+    .filter(x => x.dev >= 2 || x.o.geciken > 0).sort((a, b) => (b.dev + b.o.geciken * 2) - (a.dev + a.o.geciken * 2)).slice(0, 6);
+  const toplamBakiye = DB.kartlar.reduce((a, k) => a + kartBakiye(k.no), 0);
+
+  return `
+  ${sayfaBaslik("Yönetim", "Paneli", "7Sanat Afyon Sanat Akademisi genel durumu")}
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6">
+    ${statCard("users", "#fbbf24", "Aktif Öğrenci", students.length, `${teachers.length} öğretmen · ${students.filter(s=>!s.teacherId).length} atama bekliyor`, "setTab('ogrenciler')")}
+    ${statCard("calendar", "#a78bfa", "Bu Hafta Ders", haftalikDers, "Planlı ders sayısı", "setTab('takvim')")}
+    ${statCard("wallet", "#34d399", "Aylık Tahsilat", TL(aylikTahsilat), AY_TAM[new Date().getMonth()] + " ayı", "setTab('finans')")}
+    ${statCard("alert", "#ef4444", "Geciken Taksit", gecikenTaksit, `${ozetler.filter(x=>x.o.geciken).length} öğrencide`, "FIN_FILTRE='gecikmiş'; setTab('finans')")}
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    ${card(`${cardBaslik("shield", "Bekleyen Onaylar")}
+      <div class="space-y-3">
+        ${satir('<span class="text-sm">Telafi Talepleri</span>', `<span class="bg-gold/20 text-gold text-sm font-medium px-2.5 py-0.5 rounded-full">${bekleyenTelafi}</span>`, "setTab('telafi')")}
+        ${satir('<span class="text-sm">Ders Atama Talepleri</span>', `<span class="bg-gold/20 text-gold text-sm font-medium px-2.5 py-0.5 rounded-full">${bekleyenAtama}</span>`, "setTab('dersonay')")}
+        ${satir('<span class="text-sm">Öğretmen Ataması Bekleyen Öğrenci</span>', `<span class="bg-gold/20 text-gold text-sm font-medium px-2.5 py-0.5 rounded-full">${students.filter(s=>!s.teacherId).length}</span>`, "setTab('eslestirme')")}
+      </div>`)}
+    ${card(`${cardBaslik("alert", "Risk Altındaki Öğrenciler")}
+      <div class="space-y-2">${risk.map(({ s, o, dev }) => satir(
+        `<div class="flex items-center gap-3 min-w-0"><div class="w-2 h-2 rounded-full shrink-0" style="background:${bransRenk(s.brans)}"></div><span class="text-sm truncate">${esc(s.ad)}</span><span class="text-xs text-mut">(${esc(s.brans)})</span></div>`,
+        `<div class="flex items-center gap-2 text-xs whitespace-nowrap">${dev >= 2 ? `<span class="text-orange-400">${dev} devamsızlık</span>` : ""}${o.geciken ? `<span class="text-red-400">${o.geciken} geciken taksit</span>` : ""}</div>`,
+        `ogrenciAc('${s.id}')`)).join("") || bos("Risk altında öğrenci yok.")}</div>`)}
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`${cardBaslik("music", "Branş Dağılımı")}
+      <div class="space-y-3">${Object.entries(bransMap).map(([b, c]) => `
+        <div><div class="flex justify-between text-xs text-mut mb-1"><span>${esc(b)}</span><span>${c}</span></div>
+        <div class="h-2.5 rounded-full bg-bg"><div class="h-2.5 rounded-full" style="width:${(c / maxBrans) * 100}%;background:${bransRenk(b)}"></div></div></div>`).join("")}</div>`)}
+    ${card(`${cardBaslik("coffee", "Kafe Kartları")}
+      <div class="grid grid-cols-3 gap-3 mb-4">${Object.entries(KART_TIPLERI).map(([k, t]) => `<div class="p-3 bg-bg rounded-lg"><p class="text-xs text-mut">${t.ad}</p><p class="font-display text-xl font-bold">${DB.kartlar.filter(x=>x.tip===k).length}</p></div>`).join("")}</div>
+      ${satir('<span class="text-sm text-mut">Kartlardaki toplam bakiye</span>', `<span class="text-sm font-medium text-gold">${TL(toplamBakiye)}</span>`, "setTab('kart')")}`)}
+  </div>`;
+}
+
+function ogrenciListesiHtml(rol) {
+  const q = OGR_ARAMA.toLocaleLowerCase("tr");
+  const liste = DB.students.filter(s => (!OGR_BRANS || s.brans === OGR_BRANS) && (!q || s.ad.toLocaleLowerCase("tr").includes(q) || s.veli.ad.toLocaleLowerCase("tr").includes(q) || sadeceRakam(s.veli.tel).includes(sadeceRakam(q) || "§")));
+  const rows = liste.map((s) => {
+    const o = odemeOzeti(s); const oran = devamOrani(s.devam);
+    return `<tr onclick="ogrenciAc('${s.id}')" class="border-b border-line/60 cursor-pointer hover:bg-accent/50 transition">
+      <td class="${TD}"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold shrink-0" style="background:${bransRenk(s.brans)}20;color:${bransRenk(s.brans)}">${initials(s.ad)}</div><div><p class="text-neutral-50 font-medium">${esc(s.ad)}</p><p class="text-xs text-mut">${s.yas} yaş · ${esc(s.seviye)}</p></div></div></td>
+      <td class="${TD}">${bransBadge(s.brans)} <span class="text-xs text-mut ml-1">${esc(s.grup || (grupDersiMi(s.brans) ? "" : "Bireysel"))}</span></td>
+      <td class="${TD} text-neutral-200">${s.teacherId ? esc(ogretmenAd(s.teacherId)) : badge("warning", "Atanmadı")}</td>
+      <td class="${TD} text-neutral-200 whitespace-nowrap">${s.dersGunu ? `${esc(s.dersGunu)} ${esc(s.dersSaati)}` : '<span class="text-mut">-</span>'}</td>
+      <td class="${TD}">${oran === null ? '<span class="text-mut">-</span>' : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</td>
+      <td class="${TD}">${badge(ODEME_TONE[o.durum], o.durum)}</td>
+      <td class="${TD} text-neutral-200">${esc(s.veli.ad)}<p class="text-xs text-mut">${telGoster(s.veli.tel)}</p></td>
+    </tr>`;
+  }).join("");
+  const bransSay = (b) => DB.students.filter(s => s.brans === b).length;
+  return `
+  ${sayfaBaslik("Öğrenci", "Yönetimi", `${DB.students.length} kayıtlı öğrenci — detay, ödeme, kart ve kayıt silme için isme tıklayın`, rol === "sekreter" ? `<button onclick="setTab('yeni')" class="${BTN.p}">${ikon("userplus")} Yeni Kayıt</button>` : "")}
+  <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+    ${chipler("OGR_BRANS", OGR_BRANS, [["", "Tümü", DB.students.length], ...BRANSLAR().map(b => [b, b, bransSay(b)])])}
+    ${aramaKutusu("OGR_ARAMA", OGR_ARAMA, "Öğrenci, veli veya telefon ara")}
+  </div>
+  ${card(tablo(["Öğrenci","Branş","Öğretmen","Ders","Devam","Ödeme","Veli"], rows, "Aramaya uyan öğrenci yok."), "p-0 overflow-hidden")}`;
+}
+
+function financeHtml() {
+  const ozetler = DB.students.map(s => ({ s, o: odemeOzeti(s) }));
+  const toplamCiro = DB.students.reduce((a, s) => a + s.kayitUcreti, 0);
+  const tahsil = ozetler.reduce((a, x) => a + x.o.odenen, 0);
+  const kalan = ozetler.reduce((a, x) => a + x.o.kalan, 0);
+  const gecikenTutar = ozetler.reduce((a, x) => a + x.o.plan.filter(p => p.durum === "gecikti").reduce((b, p) => b + p.kalan, 0), 0);
+  const q = FIN_ARAMA.toLocaleLowerCase("tr");
+  const liste = ozetler.filter(x => (FIN_FILTRE === "hepsi" || x.o.durum === FIN_FILTRE) && (!q || x.s.ad.toLocaleLowerCase("tr").includes(q) || x.s.veli.ad.toLocaleLowerCase("tr").includes(q)))
+    .sort((a, b) => b.o.geciken - a.o.geciken);
+  const say = (d) => ozetler.filter(x => x.o.durum === d).length;
+  const rows = liste.map(({ s, o }) => `<tr class="border-b border-line/60 hover:bg-accent/40 transition">
+      <td class="${TD} cursor-pointer whitespace-nowrap" onclick="ogrenciAc('${s.id}','odeme')"><p class="text-neutral-50 font-medium hover:text-gold">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.brans)}</p></td>
+      <td class="${TD} text-neutral-200">${TL(s.kayitUcreti)}</td>
+      <td class="${TD}"><div class="flex items-center gap-2"><div class="w-20 h-1.5 rounded-full bg-bg"><div class="h-1.5 rounded-full bg-gold" style="width:${Math.min(100, (o.odenen / s.kayitUcreti) * 100)}%"></div></div><span class="text-xs text-mut">${o.odenenTaksit}/${s.taksitSayisi}</span></div></td>
+      <td class="${TD} text-green-400">${TL(o.odenen)}</td>
+      <td class="${TD} text-neutral-200">${TL(o.kalan)}</td>
+      <td class="${TD} text-xs text-mut whitespace-nowrap">${o.sonraki ? `${tarihTR(o.sonraki.vade)} · ${TL(o.sonraki.kalan)}` : "-"}</td>
+      <td class="${TD}">${badge(ODEME_TONE[o.durum], o.durum + (o.geciken ? ` (${o.geciken})` : ""))}</td>
+      <td class="${TD} text-right">${o.kalan > 0 ? `<button onclick="odemeAc('${s.id}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Ödeme Al</button>` : '<span class="text-xs text-green-400">✓ Tamamlandı</span>'}</td>
+    </tr>`).join("");
+  const sonTahsilatlar = DB.students.flatMap(s => (s.odemeler||[]).map(p => ({ s, p }))).sort((a, b) => b.p.tarih.localeCompare(a.p.tarih)).slice(0, 8);
+  return `
+  ${sayfaBaslik("Finans", "& Taksit", "Taksit planları, tahsilat girişi ve gecikme takibi", `<button onclick="disaAktarMaliTablo()" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Excel'e Aktar</button>`)}
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6">
+    ${statCard("receipt", "#fbbf24", "Toplam Kayıt Tutarı", TL(toplamCiro), `${DB.students.length} öğrenci`)}
+    ${statCard("wallet", "#34d399", "Tahsil Edilen", TL(tahsil), `%${Math.round((tahsil / Math.max(1, toplamCiro)) * 100)} tahsilat oranı`)}
+    ${statCard("clock", "#60a5fa", "Kalan Alacak", TL(kalan), "Vadesi gelmemiş dahil")}
+    ${statCard("alert", "#ef4444", "Vadesi Geçmiş", TL(gecikenTutar), `${say("gecikmiş")} öğrenci`, "durumSet('FIN_FILTRE','gecikmiş')")}
+  </div>
+  <div class="grid grid-cols-1 2xl:grid-cols-3 gap-6">
+    <div class="2xl:col-span-2 min-w-0">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+        ${chipler("FIN_FILTRE", FIN_FILTRE, [["hepsi","Tümü",ozetler.length],["gecikmiş","Gecikmiş",say("gecikmiş")],["güncel","Güncel",say("güncel")],["tamamlandı","Tamamlandı",say("tamamlandı")]])}
+        ${aramaKutusu("FIN_ARAMA", FIN_ARAMA, "Öğrenci veya veli ara")}
+      </div>
+      ${card(tablo(["Öğrenci","Kayıt Ücreti","Taksit","Ödenen","Kalan","Sıradaki Vade","Durum",""], rows, "Bu filtrede öğrenci yok."), "p-0 overflow-hidden")}
+    </div>
+    ${card(`${cardBaslik("receipt", "Son Tahsilatlar")}<div class="space-y-2">${sonTahsilatlar.map(({ s, p }) => satir(
+      `<div class="min-w-0"><p class="text-sm truncate">${esc(s.ad)}</p><p class="text-xs text-mut">${tarihTR(p.tarih)} · ${esc(p.yontem)}</p></div>`,
+      `<span class="text-sm text-green-400 whitespace-nowrap">+${TL(p.tutar)}</span>`, `ogrenciAc('${s.id}','odeme')`)).join("") || bos("Tahsilat yok.")}</div>`, "self-start")}
+  </div>`;
+}
+
+function adminAttendanceHtml() {
+  const cards = DB.teachers.map((t) => {
+    const oran = devamOrani(t.kurumYoklama);
+    const ogrDevam = devamOrani(DB.students.filter(s => s.teacherId === t.id).flatMap(s => s.devam));
+    return card(`
+      <div class="flex items-center justify-between mb-1"><p class="font-medium text-neutral-50">${esc(t.ad)}</p>${oran === null ? badge("neutral","Kayıt yok") : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</div>
+      <p class="text-xs text-mut mb-3">${esc(t.brans)}${t.grup ? " · " + esc(t.grup) : " · Bireysel"} · öğrenci devamı ${ogrDevam === null ? "-" : "%" + ogrDevam}</p>
+      ${devamSeridi(t.kurumYoklama || [])}`, "cursor-pointer hover:border-gold/30 transition");
+  });
+  return `
+  ${sayfaBaslik("Devam", "Takibi", "Öğretmen kurum yoklaması ve öğrenci devam durumu", `<button onclick="disaAktarYoklama()" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Öğrenci Yoklamasını Excel'e Aktar</button>`)}
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">${DB.teachers.map((t, i) => `<div onclick="ogretmenDetayAc('${t.id}')">${cards[i]}</div>`).join("")}</div>`;
+}
+
+function adminAIRiskHtml() {
+  const toneMap = { iyi:"success", dikkat:"warning", riskli:"danger" };
+  const liste = DB.students.filter(s => s.teacherId);
+  const cards = liste.map((s) => {
+    const r = AI.risk[s.id];
+    return card(`
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <div class="cursor-pointer" onclick="ogrenciAc('${s.id}','gelisim')"><p class="font-medium text-neutral-50 hover:text-gold">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.brans)} · ${s.yas} yaş · devam ${devamOrani(s.devam) === null ? "-" : "%" + devamOrani(s.devam)}</p></div>
+        <button onclick="analizEt('${s.id}')" ${(r && r.loading) || s.haftalikNotlar.length === 0 ? "disabled" : ""} class="${BTN.v}">${ikon("sparkles","w-3.5 h-3.5")} ${r && r.loading ? "Analiz ediliyor..." : "Analiz Et"}</button>
+      </div>
+      ${s.haftalikNotlar.length === 0 ? '<p class="text-xs text-mut">Henüz haftalık gelişim notu girilmemiş.</p>' : ""}
+      ${r && r.error ? `<p class="text-xs text-red-400">${esc(r.error)}</p>` : ""}
+      ${r && r.data ? `<div class="mt-1 border-t border-line pt-3">${badge(toneMap[r.data.durum] || "neutral", r.data.durum)}
+        <p class="text-sm text-neutral-300 mt-2">${esc(r.data.ozet)}</p><p class="text-xs text-gold/90 mt-2">Öneri: ${esc(r.data.oneri)}</p></div>` : ""}`);
+  }).join("");
+  return `${sayfaBaslik("AI Risk", "Analizi", "Haftalık gelişim notları ve devam durumu yapay zeka ile değerlendirilir")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">${cards}</div>`;
+}
+
+function adminAIMatchHtml() {
+  const bekleyenler = DB.students.filter((s) => !s.teacherId);
+  if (bekleyenler.length === 0) return `${sayfaBaslik("AI", "Eşleştirme")}${card(bos("Şu anda atama bekleyen öğrenci bulunmuyor."))}`;
+  if (!AI.matchSecili || !bekleyenler.find(s => s.id === AI.matchSecili)) AI.matchSecili = bekleyenler[0].id;
+  const secili = ogrenci(AI.matchSecili); const d = AI.matchDurum;
+  const onerilen = d.data && DB.teachers.find((t) => t.id === d.data.onerilenOgretmenId);
+  const bransOgretmen = DB.teachers.filter(t => t.brans === secili.brans);
+  return `
+  ${sayfaBaslik("AI", "Eşleştirme", "Veli ön görüşmesi ve öğretmen profillerine göre en uygun öğretmen önerisi")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    ${card(`${cardBaslik("users", "Atama Bekleyenler", `<span class="text-xs text-mut">${bekleyenler.length}</span>`)}
+      <div class="space-y-2 max-h-[60vh] overflow-y-auto">${bekleyenler.map(s => `<div onclick="eslestirSec('${s.id}')" class="p-3 rounded-lg cursor-pointer transition ${s.id === AI.matchSecili ? "bg-gold/15 border border-gold/30" : "bg-bg hover:bg-accent border border-transparent"}">
+        <p class="text-sm ${s.id === AI.matchSecili ? "text-gold" : ""}">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.brans)} · ${s.yas} yaş</p></div>`).join("")}</div>`, "self-start")}
+    <div class="xl:col-span-2 space-y-6">
+      ${card(`
+        <div class="flex items-start justify-between gap-3 mb-4"><div><h3 class="font-display text-xl font-semibold">${esc(secili.ad)}</h3><div class="flex gap-2 mt-1">${bransBadge(secili.brans)}${badge("neutral", secili.yas + " yaş")}${badge("neutral", secili.seviye)}</div></div>
+          <button onclick="ogrenciAc('${secili.id}')" class="${BTN.s}">Detay</button></div>
+        <div class="grid sm:grid-cols-2 gap-3 mb-4">
+          <div class="p-3 bg-bg rounded-lg"><p class="text-xs text-mut mb-1">İlgi alanı</p><p class="text-sm">${esc(secili.ilgiAlani || "-")}</p></div>
+          <div class="p-3 bg-bg rounded-lg"><p class="text-xs text-mut mb-1">Beklenti</p><p class="text-sm">${esc(secili.beklenti || "-")}</p></div>
+        </div>
+        ${secili.veliSoruCevap && secili.veliSoruCevap.length ? `<details class="mb-4"><summary class="text-xs text-mut cursor-pointer hover:text-neutral-200">Veli görüşme notları (${secili.veliSoruCevap.length})</summary>
+          <div class="space-y-2 mt-3">${secili.veliSoruCevap.map(qa => `<div><p class="text-xs text-mut">${esc(qa[0])}</p><p class="text-sm bg-bg rounded-lg p-2 mt-1">${esc(qa[1])}</p></div>`).join("")}</div></details>` : ""}
+        <div class="flex flex-wrap gap-2 items-center">
+          <button onclick="eslestirBul()" ${d.loading || !bransOgretmen.length ? "disabled" : ""} class="${BTN.p} !bg-violet-500 hover:!bg-violet-400 !text-white">${ikon("sparkles")} ${d.loading ? "Aranıyor..." : "En Uygun Öğretmeni Bul"}</button>
+          <span class="text-xs text-mut">veya elle ata:</span>
+          <select onchange="if(this.value) ataOgretmen('${secili.id}', this.value)" class="${INP} !w-auto">
+            <option value="">Öğretmen seçin</option>${bransOgretmen.map(t => `<option value="${t.id}">${esc(t.ad)}${t.grup ? " — " + esc(t.grup) : ""}</option>`).join("")}
+          </select>
+        </div>
+        ${!bransOgretmen.length ? `<p class="text-xs text-orange-400 mt-3">${esc(secili.brans)} branşında öğretmen yok — önce Öğretmenler sayfasından ekleyin.</p>` : ""}
+        ${d.error ? `<p class="text-xs text-red-400 mt-3">${esc(d.error)}</p>` : ""}`)}
+      ${onerilen ? card(`${badge("violet", "Önerilen Öğretmen")}
+        <p class="font-display text-xl text-neutral-50 mt-2">${esc(onerilen.ad)}</p>
+        <p class="text-xs text-mut mb-3">${esc(onerilen.brans)}${onerilen.grup ? " · " + esc(onerilen.grup) : ""} · ${onerilen.tecrube} yıl tecrübe · ${esc(onerilen.tarz)}</p>
+        <p class="text-sm text-neutral-300">${esc(d.data.gerekce)}</p>
+        <button onclick="ataOgretmen('${secili.id}','${onerilen.id}')" class="${BTN.p} mt-4">✓ Bu Öğretmene Ata</button>`, "border-violet-500/30") : ""}
+    </div>
+  </div>`;
+}
+
+function talepKarti(r, tip) {
+  const s = ogrenci(r.studentId);
+  if (tip === "atama") {
+    const t = DB.teachers.find(x => x.id === r.teacherId);
+    return card(`<div class="flex flex-wrap items-center justify-between gap-3">
+      <div><p class="font-medium text-neutral-50"><span class="cursor-pointer hover:text-gold" onclick="ogrenciAc('${r.studentId}')">${esc(s ? s.ad : "")}</span> → ${esc(t ? t.ad : "Silinmiş öğretmen")}</p>
+        <p class="text-xs text-mut mt-0.5">${s ? esc(s.brans) + " · " : ""}Ders: ${tarihTR(r.tarih)} (${esc(gunAdi(r.tarih.split(" ")[0]))})${r.not_ ? " · " + esc(r.not_) : ""}</p></div>
+      <div class="flex items-center gap-2">${badge(TALEP_TONE[r.durum], r.durum)}
+        ${r.durum === "beklemede" && ROLE === "yonetici" ? `<button onclick="dersAtamaDurumDegistir('${r.id}','onaylandı')" class="${BTN.ok}">Onayla</button><button onclick="dersAtamaDurumDegistir('${r.id}','reddedildi')" class="${BTN.d}">Reddet</button>` : ""}</div>
+    </div>`);
+  }
+  const t = DB.teachers.find(x => x.id === r.ogretmenId);
+  return card(`<div class="flex flex-wrap items-center justify-between gap-3">
+    <div><p class="font-medium text-neutral-50 cursor-pointer hover:text-gold" onclick="ogrenciAc('${r.studentId}','ders')">${esc(s ? s.ad : "")}</p>
+      <p class="text-xs text-mut mt-0.5">Öğretmen: ${esc(t ? t.ad : "-")} · Kaçırılan: ${tarihTR(r.dersTarihi)} · Sebep: ${esc(r.sebep)}</p>
+      <p class="text-xs text-mut">Önerilen telafi: <span class="text-neutral-200">${tarihTR(r.onerilenTarih)}</span></p></div>
+    <div class="flex items-center gap-2">${badge(TALEP_TONE[r.durum], r.durum)}
+      ${r.durum === "beklemede" && (ROLE === "sekreter" || ROLE === "yonetici") ? `<button onclick="telafiDurumDegistir('${r.id}','onaylandı')" class="${BTN.ok}">Onayla</button><button onclick="telafiDurumDegistir('${r.id}','reddedildi')" class="${BTN.d}">Reddet</button>` : ""}</div>
+  </div>`);
+}
+function talepListesi(liste, tip) {
+  const bekleyen = liste.filter(r => r.durum === "beklemede"), diger = liste.filter(r => r.durum !== "beklemede");
+  return `${bekleyen.length ? `<p class="text-xs uppercase tracking-wider text-mut mb-3">Bekleyen (${bekleyen.length})</p><div class="space-y-3 mb-6">${bekleyen.map(r => talepKarti(r, tip)).join("")}</div>` : card(bos("Bekleyen talep yok."), "mb-6")}
+    ${diger.length ? `<p class="text-xs uppercase tracking-wider text-mut mb-3">Sonuçlanan (${diger.length})</p><div class="space-y-3 opacity-80">${[...diger].reverse().map(r => talepKarti(r, tip)).join("")}</div>` : ""}`;
+}
+function adminLessonApprovalsHtml() { return `${sayfaBaslik("Ders Atama", "Onayları", "Sekreterlikten gelen manuel ders atama talepleri")}${talepListesi(DB.dersAtamaTalepleri, "atama")}`; }
+function telafiHtml() { return `${sayfaBaslik("Telafi", "Talepleri", "Öğretmenlerden gelen telafi dersi talepleri")}${talepListesi(DB.makeupRequests, "telafi")}`; }
+
+function adminCalendarHtml() {
+  if (!TAKVIM_OGRETMEN || !DB.teachers.find((t) => t.id === TAKVIM_OGRETMEN)) TAKVIM_OGRETMEN = DB.teachers[0] ? DB.teachers[0].id : null;
+  const secilen = DB.teachers.find((t) => t.id === TAKVIM_OGRETMEN);
+  if (!secilen) return `${sayfaBaslik("Ders", "Takvimi")}${card(bos("Tanımlı öğretmen bulunmuyor."))}`;
+  const ogr = DB.students.filter((s) => s.teacherId === TAKVIM_OGRETMEN);
+  const hucre = (gun, saat) => {
+    const dolu = ogr.filter((s) => s.dersGunu === gun && s.dersSaati === saat);
+    if (!dolu.length) return `<div class="h-16 rounded-lg border border-dashed border-line flex items-center justify-center text-[10px] text-neutral-700">Boş</div>`;
+    const r = bransRenk(secilen.brans);
+    return `<div class="h-16 rounded-lg flex flex-col items-center justify-center px-1 text-center overflow-hidden" style="background:${r}18;border:1px solid ${r}55">
+      ${dolu.length > 2 ? `<span class="text-[11px] font-medium" style="color:${r}">${esc(secilen.grup || "")}</span><span class="text-[10px] text-mut">${dolu.length} öğrenci</span>` : dolu.map((s) => `<span onclick="ogrenciAc('${s.id}')" class="text-[11px] font-medium leading-tight truncate w-full cursor-pointer hover:underline" style="color:${r}">${esc(s.ad)}</span>`).join("")}</div>`;
+  };
+  const grid = `<div class="overflow-x-auto"><table class="w-full border-separate min-w-[640px]" style="border-spacing:6px">
+    <thead><tr><th class="w-14"></th>${HAFTA_GUNLERI.map((g) => `<th class="text-xs text-mut font-medium pb-1">${esc(g)}</th>`).join("")}</tr></thead>
+    <tbody>${DERS_SAATLERI.map((saat) => `<tr><td class="text-xs text-mut whitespace-nowrap">${esc(saat)}</td>${HAFTA_GUNLERI.map((gun) => `<td>${hucre(gun, saat)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const program = ogr.filter((s) => s.dersGunu).sort((a, b) => HAFTA_GUNLERI.indexOf(a.dersGunu) - HAFTA_GUNLERI.indexOf(b.dersGunu) || (a.dersSaati || "").localeCompare(b.dersSaati || ""))
+    .map((s) => satir(`<div class="cursor-pointer" onclick="ogrenciAc('${s.id}')"><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.dersGunu)} · ${esc(s.dersSaati)}</p></div>`, `<button onclick="dersSil('${s.id}')" class="${BTN.d}">Kaldır</button>`)).join("") || bos("Bu öğretmenin planlı dersi yok.");
+  const atanabilir = DB.students.filter((s) => s.brans === secilen.brans);
+  return `
+  ${sayfaBaslik("Ders", "Takvimi", "Öğretmen bazında haftalık program")}
+  <div class="flex flex-wrap gap-2 mb-4">${DB.teachers.map(t => `<button onclick="durumSet('TAKVIM_OGRETMEN','${t.id}')" class="text-xs px-3 py-1.5 rounded-lg border transition ${t.id === TAKVIM_OGRETMEN ? "bg-gold/15 border-gold/40 text-gold" : "border-line text-mut hover:bg-accent hover:text-neutral-200"}">${esc(t.ad)}<span class="opacity-60"> · ${esc(t.brans)}${t.grup ? " " + esc(t.grup.replace("Grup ", "G")) : ""}</span></button>`).join("")}</div>
+  ${card(grid)}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+    ${card(`${cardBaslik("plus", "Yeni Ders Ekle")}
+      ${lbl("Öğrenci")}<select id="takvimOgrenci" class="${INP} mb-3">${atanabilir.map((s) => `<option value="${s.id}">${esc(s.ad)}${s.teacherId ? " (mevcut: " + esc(ogretmenAd(s.teacherId) || "") + ")" : ""}</option>`).join("")}</select>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>${lbl("Gün")}<select id="takvimGun" class="${INP}">${HAFTA_GUNLERI.map((g) => `<option>${g}</option>`).join("")}</select></div>
+        <div>${lbl("Saat")}<select id="takvimSaat" class="${INP}">${DERS_SAATLERI.map((s) => `<option>${s}</option>`).join("")}</select></div>
+      </div>
+      <button onclick="dersEkleAdmin()" ${atanabilir.length ? "" : "disabled"} class="${BTN.p}">+ Derse Ekle</button>
+      ${!atanabilir.length ? '<p class="text-xs text-mut mt-2">Bu branşta öğrenci bulunmuyor.</p>' : ""}`)}
+    ${card(`${cardBaslik("calendar", secilen.ad + " — Program")}<div class="space-y-2 max-h-80 overflow-y-auto">${program}</div>`)}
+  </div>`;
+}
+
+function teachersHtml() {
+  const q = OGRT_ARAMA.toLocaleLowerCase("tr");
+  const liste = DB.teachers.filter(t => !q || t.ad.toLocaleLowerCase("tr").includes(q) || t.brans.toLocaleLowerCase("tr").includes(q));
+  const rows = liste.map(t => {
+    const n = DB.students.filter(s => s.teacherId === t.id).length; const oran = devamOrani(t.kurumYoklama);
+    return `<tr class="border-b border-line/60 hover:bg-accent/40 transition">
+      <td class="${TD} cursor-pointer" onclick="ogretmenDetayAc('${t.id}')"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold shrink-0" style="background:${bransRenk(t.brans)}20;color:${bransRenk(t.brans)}">${initials(t.ad)}</div><div><p class="text-neutral-50 font-medium hover:text-gold">${esc(t.ad)}</p><p class="text-xs text-mut">${t.tecrube} yıl tecrübe</p></div></div></td>
+      <td class="${TD}">${bransBadge(t.brans)} <span class="text-xs text-mut ml-1">${esc(t.grup || "Bireysel")}</span></td>
+      <td class="${TD} text-neutral-200">${n}</td>
+      <td class="${TD}">${oran === null ? '<span class="text-mut">-</span>' : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</td>
+      <td class="${TD} text-neutral-200 whitespace-nowrap">${esc(t.tel || "-")}<p class="text-xs text-mut">${esc(t.email || "")}</p></td>
+      <td class="${TD}"><div class="flex justify-end gap-1.5"><button onclick="ogretmenFormAc('${t.id}')" class="${BTN.s}">${ikon("edit","w-3.5 h-3.5")} Düzenle</button><button onclick="ogretmenSilSor('${t.id}')" class="${BTN.d}">${ikon("trash","w-3.5 h-3.5")}</button></div></td>
+    </tr>`;
+  }).join("");
+  const bransSay = BRANSLAR().map(b => [b, DB.teachers.filter(t => t.brans === b).length]);
+  return `
+  ${sayfaBaslik("Öğretmen", "Yönetimi", "Öğretmen kayıtları, bilgi düzenleme ve panel giriş hesapları", `<button onclick="ogretmenFormAc()" class="${BTN.p}">${ikon("userplus")} Yeni Öğretmen</button>`)}
+  <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">${bransSay.map(([b, n]) => `<div class="bg-card border border-line rounded-xl p-3"><div class="flex items-center gap-2 text-xs text-mut"><span class="w-2 h-2 rounded-full" style="background:${bransRenk(b)}"></span>${esc(b)}</div><p class="font-display text-xl font-bold mt-1">${n}</p></div>`).join("")}</div>
+  <div class="flex justify-end mb-4">${aramaKutusu("OGRT_ARAMA", OGRT_ARAMA, "Öğretmen veya branş ara")}</div>
+  ${card(tablo(["Öğretmen","Branş / Grup","Öğrenci","Kurum Devamı","İletişim",""], rows, "Öğretmen bulunamadı."), "p-0 overflow-hidden")}`;
+}
+
+/* ---------- Kafe kartları sayfası (yönetici + sekreter) ---------- */
+function kartlarHtml() {
+  const q = KART_ARAMA.toLocaleLowerCase("tr"); const qr = sadeceRakam(KART_ARAMA);
+  const liste = DB.kartlar.map(k => ({ k, s: ogrenci(k.studentId), b: kartBakiye(k.no) }))
+    .filter(({ k, s }) => !q || (s && (s.ad.toLocaleLowerCase("tr").includes(q) || s.veli.ad.toLocaleLowerCase("tr").includes(q))) || (qr && k.no.includes(qr)));
+  const toplam = DB.kartlar.reduce((a, k) => a + kartBakiye(k.no), 0);
+  const BUGUN = bugun();
+  const bugunYukleme = DB.kartHareketleri.filter(h => h.tur === "yukleme" && h.tarih.startsWith(BUGUN)).reduce((a, h) => a + h.tutar, 0);
+  const bugunHarcama = DB.kartHareketleri.filter(h => h.tur === "harcama" && h.tarih.startsWith(BUGUN)).reduce((a, h) => a + h.tutar, 0);
+  const rows = liste.map(({ k, s, b }) => {
+    const t = KART_TIPLERI[k.tip];
+    return `<tr class="border-b border-line/60 hover:bg-accent/40 transition">
+      <td class="${TD}"><div class="w-12 h-8 rounded-md" style="background:${t.bg}"></div></td>
+      <td class="${TD} font-mono text-neutral-200 whitespace-nowrap cursor-pointer hover:text-gold" onclick="kartDetayAc('${k.no}')">${kartNoGoster(k.no)}</td>
+      <td class="${TD}">${badge(k.tip === "gold" ? "gold" : k.tip === "platinum" ? "info" : "neutral", t.ad)}${k.aktif ? "" : " " + badge("danger", "Donduruldu")}</td>
+      <td class="${TD}"><p class="text-neutral-50 cursor-pointer hover:text-gold" onclick="ogrenciAc('${s ? s.id : ""}','kart')">${esc(s ? s.ad : "-")}</p><p class="text-xs text-mut">Veli: ${esc(s ? s.veli.ad : "-")}</p></td>
+      <td class="${TD} font-medium ${b < 100 ? "text-orange-400" : "text-neutral-50"}">${TL(b)}</td>
+      <td class="${TD}"><div class="flex justify-end gap-1.5"><button onclick="kartYukleAc('${k.no}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Bakiye Yükle</button><button onclick="kartDetayAc('${k.no}')" class="${BTN.s}">Hareketler</button></div></td>
+    </tr>`;
+  }).join("");
+  const sonHareket = [...DB.kartHareketleri].sort((a, b) => b.tarih.localeCompare(a.tarih)).slice(0, 8);
+  return `
+  ${sayfaBaslik("Kafe", "Kartları", "Kafe (Starbucks) kartları — her öğrencide aynı numaralı 2 kopya: veli kartı ve öğrenci kartı", `<button onclick="disaAktarKartlar()" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Excel'e Aktar</button>`)}
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6">
+    ${statCard("card", "#fbbf24", "Aktif Kart", DB.kartlar.filter(k => k.aktif).length, `${DB.kartlar.length * 2} fiziksel kopya`)}
+    ${statCard("wallet", "#34d399", "Toplam Bakiye", TL(toplam), "Kartlarda bekleyen")}
+    ${statCard("plus", "#60a5fa", "Bugün Yüklenen", TL(bugunYukleme), tarihTR(BUGUN))}
+    ${statCard("coffee", "#f472b6", "Bugün Harcanan", TL(bugunHarcama), "Kafe satışları")}
+  </div>
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="xl:col-span-2">
+      <div class="flex justify-end mb-4">${aramaKutusu("KART_ARAMA", KART_ARAMA, "Öğrenci, veli veya kart no ara")}</div>
+      ${card(tablo(["","Kart No","Tip","Sahibi","Bakiye",""], rows, "Kart bulunamadı."), "p-0 overflow-hidden")}
+    </div>
+    ${card(`${cardBaslik("receipt", "Son Hareketler")}<div class="space-y-2">${sonHareket.map(h => { const k = kartBul(h.kartNo); const s = k && ogrenci(k.studentId); return satir(
+      `<div class="min-w-0"><p class="text-sm truncate">${esc(s ? s.ad : "-")}</p><p class="text-xs text-mut truncate">${esc(h.aciklama)} · ${tarihTR(h.tarih)}</p></div>`,
+      `<span class="text-sm whitespace-nowrap ${h.tur === "yukleme" ? "text-green-400" : ""}">${h.tur === "yukleme" ? "+" : "−"}${TL(h.tutar)}</span>`, `kartDetayAc('${h.kartNo}')`); }).join("") || bos("Hareket yok.")}</div>`, "self-start")}
+  </div>`;
+}
+
+/* ================================================================== */
+/* Öğretmen paneli                                                      */
+/* ================================================================== */
+function benimOgretmen() { return DB.teachers.find(t => t.id === USER.teacherId); }
+function teacherAttendanceHtml(ogrenciler) {
+  const gun = gunAdi(YOKLAMA_TARIH);
+  const liste = ogrenciler.filter((s) => s.dersGunu === gun).sort((a, b) => (a.dersSaati || "").localeCompare(b.dersSaati || ""));
+  const rows = liste.map((s) => {
+    const mevcut = (s.devam.find(d => d[0] === YOKLAMA_TARIH) || [])[1];
+    const secim = YOKLAMA_TEMP[s.id] || mevcut;
+    return satir(`<div><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.dersSaati || "")}${mevcut ? " · kayıtlı: " + (mevcut === "var" ? "geldi" : "gelmedi") : ""}</p></div>`,
+      `<div class="flex gap-2">
+        <button onclick="toggleYoklama('${s.id}','var')" class="text-xs px-3 py-1.5 rounded-md border transition ${secim === "var" ? "bg-green-500/20 border-green-500/50 text-green-300" : "border-line text-mut hover:text-neutral-200"}">Geldi</button>
+        <button onclick="toggleYoklama('${s.id}','yok')" class="text-xs px-3 py-1.5 rounded-md border transition ${secim === "yok" ? "bg-red-500/20 border-red-500/50 text-red-300" : "border-line text-mut hover:text-neutral-200"}">Gelmedi</button>
+      </div>`);
+  }).join("");
+  return `${sayfaBaslik("Yoklama", "Al", "Seçilen günün ders programındaki öğrenciler listelenir")}
+  ${card(`
+    <div class="flex flex-wrap items-end gap-3 mb-2">
+      <div>${lbl("Ders Tarihi")}<input id="yoklamaTarihi" type="date" value="${YOKLAMA_TARIH}" onchange="durumSet('YOKLAMA_TARIH', this.value)" class="${INP} !w-auto" /></div>
+      ${liste.length ? `<button onclick="hepsiVar('${liste.map(s => s.id).join(",")}')" class="${BTN.s} mb-0.5">Hepsi geldi</button>` : ""}
+    </div>
+    <p class="text-xs text-mut mb-4">${esc(gun)} günü için planlı ${liste.length} öğrenci.</p>
+    ${liste.length ? `<div class="space-y-2">${rows}</div>` : bos("Bu tarihte planlı dersiniz bulunmuyor.")}
+    <button onclick="kaydetYoklama()" ${liste.length ? "" : "disabled"} class="${BTN.p} mt-4">Yoklamayı Kaydet</button>`, "max-w-2xl")}`;
+}
+function teacherWeeklyHtml(ogrenciler) {
+  if (!GELISIM_OGRENCI || !ogrenciler.find(s => s.id === GELISIM_OGRENCI)) GELISIM_OGRENCI = ogrenciler[0] ? ogrenciler[0].id : null;
+  const secili = ogrenci(GELISIM_OGRENCI);
+  if (!secili) return `${sayfaBaslik("Haftalık", "Gelişim")}${card(bos("Size atanmış öğrenci bulunmuyor."))}`;
+  const gecmis = [...secili.haftalikNotlar].reverse().map(n => `<div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(n[0])}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("");
+  return `${sayfaBaslik("Haftalık", "Gelişim", "Öğrencileriniz için haftalık değerlendirme notu")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`
+      ${lbl("Öğrenci")}<select onchange="durumSet('GELISIM_OGRENCI', this.value)" class="${INP} mb-4">${ogrenciler.map(s => `<option value="${s.id}" ${s.id === secili.id ? "selected" : ""}>${esc(s.ad)}</option>`).join("")}</select>
+      ${lbl("Hafta")}<input type="date" value="${GELISIM_HAFTA}" onchange="durumSet('GELISIM_HAFTA', this.value)" class="${INP} mb-1" />
+      <p class="text-xs text-mut mb-4">${GELISIM_HAFTA ? "Seçilen hafta: " + esc(haftaEtiketi(GELISIM_HAFTA)) : "Tarihi seçtiğinizde ilgili hafta otomatik hesaplanır."}</p>
+      ${lbl("Gelişim Notu")}<textarea id="gelisimNot" rows="3" placeholder="Bu hafta öğrencinin gelişimini kısaca değerlendirin..." class="${INP} mb-4"></textarea>
+      ${lbl("Gelişim Puanı")}<div class="flex items-center gap-3 mb-4"><input id="gelisimPuan" type="range" min="1" max="5" value="4" oninput="document.getElementById('puanGoster').textContent=this.value" class="w-full accent-[#fcc522]" /><span class="text-sm text-gold w-10"><span id="puanGoster">4</span>/5</span></div>
+      <button onclick="kaydetGelisimNotu()" class="${BTN.p}">Notu Kaydet</button>`)}
+    ${card(`${cardBaslik("trend", "Geçmiş Notlar")}<div class="space-y-2 max-h-96 overflow-y-auto">${gecmis || bos("Henüz not yok.")}</div>`)}
+  </div>`;
+}
+function teacherMakeupHtml(ogrenciler, teacherId) {
+  const kendi = DB.makeupRequests.filter(r => r.ogretmenId === teacherId);
+  const liste = kendi.map(r => { const s = ogrenci(r.studentId); return satir(`<div><p class="text-sm">${esc(s ? s.ad : "Öğrenci")}</p><p class="text-xs text-mut">${tarihTR(r.dersTarihi)} → ${tarihTR(r.onerilenTarih)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum)); }).join("");
+  return `${sayfaBaslik("Telafi", "Planlama", "Katılamayan öğrenci için telafi talebi oluşturun")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(ogrenciler.length ? `
+      ${lbl("Öğrenci")}<select id="telafiOgrenci" class="${INP} mb-4">${ogrenciler.map(s => `<option value="${s.id}">${esc(s.ad)}</option>`).join("")}</select>
+      ${lbl("Katılamadığı Ders Tarihi ve Saati")}<input id="telafiDersTarihi" type="datetime-local" class="${INP} mb-4" />
+      ${lbl("Sebep")}<input id="telafiSebep" placeholder="Örn: Sağlık, aile ziyareti..." class="${INP} mb-4" />
+      ${lbl("Önerilen Telafi Tarih ve Saati")}<input id="telafiOnerilenTarih" type="datetime-local" class="${INP} mb-4" />
+      <button onclick="gonderTelafiTalebi('${teacherId}')" class="${BTN.p}">Talebi Gönder</button>` : bos("Size atanmış öğrenci yok."))}
+    ${card(`${cardBaslik("repeat", "Gönderdiğim Talepler")}<div class="space-y-2">${liste || bos("Henüz talep göndermediniz.")}</div>`)}
+  </div>`;
+}
+function teacherStudentsHtml(ogrenciler) {
+  return `${sayfaBaslik("Öğrencilerim", "", `${ogrenciler.length} öğrenci`)}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${ogrenciler.map(s => { const oran = devamOrani(s.devam); const son = s.haftalikNotlar[s.haftalikNotlar.length - 1]; return card(`
+    <div class="flex items-center justify-between mb-2"><p class="font-medium">${esc(s.ad)}</p>${oran === null ? "" : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</div>
+    <p class="text-xs text-mut mb-3">${s.yas} yaş · ${esc(s.seviye)} · ${s.dersGunu ? esc(s.dersGunu + " " + s.dersSaati) : "ders saati yok"}</p>
+    ${devamSeridi(s.devam)}
+    ${son ? `<div class="mt-3 p-2 bg-bg rounded-lg"><div class="flex justify-between mb-1"><span class="text-xs text-mut">${esc(son[0])}</span>${puanNoktalari(son[2])}</div><p class="text-xs">${esc(son[1])}</p></div>` : ""}
+    <p class="text-xs text-mut mt-3">Veli: ${esc(s.veli.ad)} · ${telGoster(s.veli.tel)}</p>`); }).join("") || card(bos("Atanmış öğrenci yok."))}</div>`;
+}
+
+/* ================================================================== */
+/* Sekreter paneli                                                      */
+/* ================================================================== */
+function secNewStudentHtml() {
+  const varsBrans = "Piyano";
+  return `${sayfaBaslik("Yeni Öğrenci", "Kaydı", "Kayıtla birlikte veli paneli şifresi ve kafe kartı numarası otomatik üretilir")}
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+    <div class="space-y-6">
+      ${card(`${cardBaslik("user", "Öğrenci Bilgileri")}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="sm:col-span-2">${lbl("Ad Soyad", 1)}<input id="yeniAd" class="${INP}" /></div>
+          <div>${lbl("Yaş", 1)}<input id="yeniYas" type="number" min="3" max="25" class="${INP}" /></div>
+          <div>${lbl("Seviye")}<select id="yeniSeviye" class="${INP}"><option>Başlangıç</option><option>Orta</option><option>İleri</option></select></div>
+          <div>${lbl("Branş", 1)}<select id="yeniBrans" onchange="yeniBransDegisti(this.value)" class="${INP}">${BRANSLAR().map(b => `<option ${b === varsBrans ? "selected" : ""}>${b}</option>`).join("")}</select></div>
+          <div>${lbl("Kayıt Tarihi", 1)}<input id="yeniTarih" type="date" value="${bugun()}" class="${INP}" /></div>
+        </div>`)}
+      ${card(`${cardBaslik("phone", "Veli Bilgileri")}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>${lbl("Veli Ad Soyad", 1)}<input id="yeniVeliAd" class="${INP}" /></div>
+          <div>${lbl("Veli Telefon", 1)}<input id="yeniVeliTel" inputmode="tel" placeholder="05xx xxx xx xx" class="${INP}" /></div>
+          <div class="sm:col-span-2">${lbl("Veli E-posta")}<input id="yeniVeliEmail" type="email" class="${INP}" /></div>
+        </div>
+        <p class="text-xs text-mut mt-3">Veli, bu telefon numarası ve kayıtta üretilecek 6 haneli şifre ile veli paneline girer. Kardeş kaydında aynı telefon girilirse mevcut şifre kullanılır.</p>`)}
+      ${card(`${cardBaslik("wallet", "Ücret ve Taksit")}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>${lbl("Kayıt Ücreti (₺)", 1)}<input id="yeniUcret" type="number" value="${BRANS_BILGI[varsBrans].ucret}" class="${INP}" /></div>
+          <div>${lbl("Taksit Sayısı")}<select id="yeniTaksit" class="${INP}">${[1,2,3,4,5,6,8,10,12].map(n => `<option value="${n}" ${n === 6 ? "selected" : ""}>${n} taksit</option>`).join("")}</select></div>
+          <div>${lbl("Peşinat / İlk Ödeme (₺)")}<input id="yeniIlkOdeme" type="number" placeholder="0" class="${INP}" /></div>
+          <div>${lbl("Ödeme Yöntemi")}<select id="yeniIlkOdemeYontem" class="${INP}"><option>Nakit</option><option>Kredi Kartı</option><option>Havale/EFT</option></select></div>
+        </div>`)}
+    </div>
+    <div class="space-y-6">
+      ${card(`${cardBaslik("coffee", "Kafe Kartı")}
+        <p class="text-xs text-mut mb-3">Kart tipini seçin. Numara kayıt sırasında rastgele üretilir; aynı numaradan veli ve öğrenci için 2 kopya basılır.</p>
+        <div class="grid grid-cols-3 gap-3 mb-4">${Object.entries(KART_TIPLERI).map(([k, t]) => `<button type="button" onclick="durumSet('YENI_KART_TIP','${k}')" class="rounded-xl p-1 border-2 transition ${YENI_KART_TIP === k ? "border-gold" : "border-transparent hover:border-line"}">
+          <div class="aspect-[1.586/1] rounded-lg flex items-end p-2" style="background:${t.bg};color:${t.yazi}"><span class="text-[10px] font-semibold tracking-widest uppercase">${t.ad}</span></div></button>`).join("")}</div>
+        ${lbl("Açılış Bakiyesi (₺)")}<input id="yeniIlkBakiye" type="number" placeholder="0" class="${INP}" />`)}
+      ${card(`${cardBaslik("clipboard", "Veli ile Ön Görüşme")}
+        <p class="text-xs text-mut mb-4">Cevaplar, en uygun öğretmeni seçerken (AI eşleştirme dahil) kullanılır.</p>
+        <div class="space-y-4">${VELI_SORULARI.map((soru, i) => `<div>${lbl(`${i + 1}. ${soru}`)}<textarea id="veliCevap${i}" rows="2" placeholder="Velinin cevabı..." class="${INP}"></textarea></div>`).join("")}</div>`)}
+      <button onclick="kaydetYeniOgrenci()" class="${BTN.p} w-full py-3">${ikon("userplus")} Kaydı Tamamla</button>
+    </div>
+  </div>`;
+}
+function secAttendanceViewHtml() {
+  const kayitlar = DB.students.flatMap(s => s.devam.map(d => ({ s, tarih: d[0], durum: d[1] }))).sort((a, b) => b.tarih.localeCompare(a.tarih)).slice(0, 200);
+  const rows = kayitlar.map(k => `<tr class="border-b border-line/60 hover:bg-accent/40 cursor-pointer" onclick="ogrenciAc('${k.s.id}','devam')">
+    <td class="${TD} text-neutral-50">${esc(k.s.ad)}</td><td class="${TD}">${bransBadge(k.s.brans)}</td><td class="${TD} text-neutral-200">${tarihTR(k.tarih)}</td>
+    <td class="${TD}">${k.durum === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi")}</td></tr>`).join("");
+  return `${sayfaBaslik("Yoklama", "Kayıtları", "Son 200 yoklama kaydı", `<button onclick="disaAktarYoklama()" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Excel'e Aktar</button>`)}
+  ${card(tablo(["Öğrenci","Branş","Tarih","Durum"], rows), "p-0 overflow-hidden")}`;
+}
+function secFinanceRemindersHtml() {
+  const liste = DB.students.map(s => ({ s, o: odemeOzeti(s) })).filter(x => x.o.durum !== "tamamlandı").sort((a, b) => b.o.geciken - a.o.geciken);
+  const rows = liste.map(({ s, o }) => {
+    const yapildi = HATIRLATILDI.has(s.id);
+    return `<tr class="border-b border-line/60">
+      <td class="${TD} cursor-pointer" onclick="ogrenciAc('${s.id}','odeme')"><p class="text-neutral-50 hover:text-gold">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.veli.ad)} · ${telGoster(s.veli.tel)}</p></td>
+      <td class="${TD} text-neutral-200">${TL(o.kalan)}</td>
+      <td class="${TD} text-xs text-mut whitespace-nowrap">${o.sonraki ? `${tarihTR(o.sonraki.vade)} · ${TL(o.sonraki.kalan)}` : "-"}</td>
+      <td class="${TD}">${badge(ODEME_TONE[o.durum], o.durum + (o.geciken ? ` (${o.geciken})` : ""))}</td>
+      <td class="${TD}"><div class="flex justify-end gap-1.5">
+        <button onclick="odemeAc('${s.id}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Ödeme Al</button>
+        <button onclick="hatirlat('${s.id}')" ${yapildi ? "disabled" : ""} class="${BTN.s} ${yapildi ? "opacity-50" : ""}">${ikon("bell","w-3.5 h-3.5")} ${yapildi ? "Hatırlatıldı" : "Hatırlat"}</button></div></td>
+    </tr>`;
+  }).join("");
+  return `${sayfaBaslik("Tahsilat &", "Hatırlatma", "Ödemesi tamamlanmamış öğrenciler — gecikenler üstte")}
+  ${card(tablo(["Öğrenci / Veli","Kalan","Sıradaki Vade","Durum",""], rows, "Bekleyen ödeme yok."), "p-0 overflow-hidden")}`;
+}
+function secLessonAssignHtml() {
+  const talepler = [...DB.dersAtamaTalepleri].reverse().map(r => { const s = ogrenci(r.studentId), t = DB.teachers.find(x => x.id === r.teacherId);
+    return satir(`<div><p class="text-sm">${esc(s ? s.ad : "Öğrenci")} → ${esc(t ? t.ad : "Öğretmen")}</p><p class="text-xs text-mut">${tarihTR(r.tarih)}${r.not_ ? " · " + esc(r.not_) : ""}</p></div>`, badge(TALEP_TONE[r.durum], r.durum)); }).join("");
+  return `${sayfaBaslik("Manuel Ders", "Atama", "Talep yönetici onayına gider; onaylanınca öğrenci otomatik atanır")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`
+      ${lbl("Öğrenci")}<select id="dersAtamaOgrenci" class="${INP} mb-4">${[...DB.students].sort((a, b) => (a.teacherId ? 1 : 0) - (b.teacherId ? 1 : 0)).map(s => `<option value="${s.id}">${esc(s.ad)} — ${esc(s.brans)}${s.teacherId ? "" : " (atanmamış)"}</option>`).join("")}</select>
+      ${lbl("Öğretmen")}<select id="dersAtamaOgretmen" class="${INP} mb-4">${DB.teachers.map(t => `<option value="${t.id}">${esc(t.ad)} — ${esc(t.brans)}${t.grup ? " (" + esc(t.grup) + ")" : ""}</option>`).join("")}</select>
+      ${lbl("Ders Tarihi ve Saati")}<input id="dersAtamaTarihi" type="datetime-local" class="${INP} mb-4" />
+      ${lbl("Not (opsiyonel)")}<input id="dersAtamaNot" placeholder="Örn: Veli ile telefonda görüşüldü" class="${INP} mb-4" />
+      <button onclick="gonderDersAtamaTalebi()" class="${BTN.p}">Talebi Gönder</button>`)}
+    ${card(`${cardBaslik("clipboard", "Gönderilen Talepler")}<div class="space-y-2">${talepler || bos("Henüz talep oluşturulmadı.")}</div>`)}
+  </div>`;
+}
+
+/* ================================================================== */
+/* Kasa (POS) paneli                                                    */
+/* ================================================================== */
+function kasaHtml() {
+  const k = KASA_KART && kartBul(KASA_KART); const s = k && ogrenci(k.studentId);
+  const toplam = KASA_SEPET.reduce((a, x) => a + x[1], 0);
+  const q = KASA_ARAMA.toLocaleLowerCase("tr");
+  const sonuc = q.length >= 2 ? DB.kartlar.map(x => ({ x, s: ogrenci(x.studentId) })).filter(({ s }) => s && (s.ad.toLocaleLowerCase("tr").includes(q) || s.veli.ad.toLocaleLowerCase("tr").includes(q))).slice(0, 6) : [];
+  const bugunSatis = DB.kartHareketleri.filter(h => h.tur === "harcama" && h.tarih.startsWith(bugun())).sort((a, b) => b.tarih.localeCompare(a.tarih));
+  return `${sayfaBaslik("Kafe", "Kasası", "Kart numarası veya isimle kart bulun, ürünleri ekleyin, karttan tahsil edin")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="xl:col-span-2 space-y-6">
+      ${card(`${cardBaslik("card", "Kart Seç")}
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div class="flex gap-2"><input id="kasaKartNo" inputmode="numeric" placeholder="16 haneli kart no" onkeydown="if(event.key==='Enter') kasaKartNoIle()" class="${INP} font-mono" /><button onclick="kasaKartNoIle()" class="${BTN.p}">Bul</button></div>
+          ${aramaKutusu("KASA_ARAMA", KASA_ARAMA, "veya öğrenci/veli adı")}
+        </div>
+        ${sonuc.length ? `<div class="mt-3 space-y-2">${sonuc.map(({ x, s }) => satir(`<div><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut font-mono">${kartNoGoster(x.no)} · ${KART_TIPLERI[x.tip].ad}</p></div>`, `<span class="text-sm">${TL(kartBakiye(x.no))}</span>`, `kasaKartSec('${x.no}')`)).join("")}</div>` : ""}`)}
+      ${card(`${cardBaslik("coffee", "Menü")}
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">${KAFE_MENU.map(([ad, f], i) => `<button onclick="kasaEkle(${i})" ${k ? "" : "disabled"} class="p-3 bg-bg rounded-lg text-left hover:bg-accent border border-transparent hover:border-gold/30 transition disabled:opacity-40"><p class="text-sm">${esc(ad)}</p><p class="text-xs text-gold">${TL(f)}</p></button>`).join("")}</div>
+        <div class="flex gap-2 mt-3"><input id="kasaSerbestAd" placeholder="Diğer ürün" class="${INP}" /><input id="kasaSerbestTutar" type="number" placeholder="₺" class="${INP} !w-28" /><button onclick="kasaSerbestEkle()" ${k ? "" : "disabled"} class="${BTN.s}">Ekle</button></div>`)}
+    </div>
+    <div class="space-y-6">
+      ${card(k ? `
+        <div class="flex justify-center mb-4">${kartGorsel(k, KASA_KOPYA === "veli" ? "Veli" : "Öğrenci", KASA_KOPYA === "veli" ? s.veli.ad : s.ad, true)}</div>
+        <div class="flex items-center justify-between mb-3"><span class="text-sm text-mut">Bakiye</span><span class="font-display text-2xl font-bold ${kartBakiye(k.no) < toplam ? "text-red-400" : "text-gold"}">${TL(kartBakiye(k.no))}</span></div>
+        ${lbl("Kartı kullanan")}${chipler("KASA_KOPYA", KASA_KOPYA, [["öğrenci", "Öğrenci kartı"], ["veli", "Veli kartı"]])}
+        <div class="border-t border-line mt-4 pt-4 space-y-1.5">${KASA_SEPET.map((x, i) => `<div class="flex items-center justify-between text-sm"><span>${esc(x[0])}</span><span class="flex items-center gap-2">${TL(x[1])}<button onclick="kasaCikar(${i})" class="text-mut hover:text-red-400">${ikon("x","w-3.5 h-3.5")}</button></span></div>`).join("") || '<p class="text-xs text-mut">Sepet boş.</p>'}</div>
+        <div class="flex items-center justify-between border-t border-line mt-4 pt-4"><span class="text-sm">Toplam</span><span class="font-display text-xl font-bold">${TL(toplam)}</span></div>
+        ${!k.aktif ? '<p class="text-xs text-red-400 mt-2">Kart dondurulmuş.</p>' : ""}
+        <button onclick="kasaOde()" ${toplam && k.aktif ? "" : "disabled"} class="${BTN.p} w-full mt-4 py-2.5">Karttan Tahsil Et</button>
+        <button onclick="kasaKartSec(null)" class="${BTN.g} w-full mt-2">Kartı bırak</button>` : bos("Satış için bir kart seçin."))}
+      ${card(`${cardBaslik("receipt", "Bugünkü Satışlar", `<span class="text-sm text-gold">${TL(bugunSatis.reduce((a, h) => a + h.tutar, 0))}</span>`)}<div class="space-y-2 max-h-72 overflow-y-auto">${bugunSatis.map(h => { const kk = kartBul(h.kartNo); const ss = kk && ogrenci(kk.studentId); return satir(`<div class="min-w-0"><p class="text-sm truncate">${esc(h.aciklama)}</p><p class="text-xs text-mut">${h.tarih.slice(11)} · ${esc(ss ? ss.ad : "")} (${esc(h.kopya || "")})</p></div>`, `<span class="text-sm whitespace-nowrap">${TL(h.tutar)}</span>`); }).join("") || bos("Bugün satış yok.")}</div>`)}
+    </div>
+  </div>`;
+}
+
+/* ================================================================== */
+/* Veli paneli                                                          */
+/* ================================================================== */
+function veliCocuklari() { return DB.students.filter(s => s.veli && telEsit(s.veli.tel, USER.veliTel)); }
+function veliPanelHtml() {
+  const cocuklar = veliCocuklari();
+  if (!cocuklar.length) return card(bos("Kayıtlı öğrenci bulunamadı. Lütfen kurumla iletişime geçin."));
+  if (!VELI_COCUK || !cocuklar.find(s => s.id === VELI_COCUK)) VELI_COCUK = cocuklar[0].id;
+  const s = ogrenci(VELI_COCUK);
+  const secici = cocuklar.length > 1 ? `<div class="mb-6">${chipler("VELI_COCUK", VELI_COCUK, cocuklar.map(c => [c.id, c.ad]))}</div>` : "";
+  const map = { ozet: veliOzetHtml, ders: veliDersHtml, gelisim: veliGelisimHtml, odeme: veliOdemeHtml, kart: veliKartHtml };
+  return secici + (map[TABS.veli] || veliOzetHtml)(s);
+}
+function veliOzetHtml(s) {
+  const o = odemeOzeti(s); const oran = devamOrani(s.devam); const t = DB.teachers.find(x => x.id === s.teacherId);
+  const son = s.haftalikNotlar[s.haftalikNotlar.length - 1];
+  return `${sayfaBaslik("Merhaba,", s.veli.ad.split(" ")[0], `${s.ad} için güncel özet`)}
+  ${card(`<div class="flex flex-wrap items-center gap-4">
+    <div class="w-14 h-14 rounded-xl flex items-center justify-center" style="background:${bransRenk(s.brans)}20;color:${bransRenk(s.brans)}">${ikon("music","w-7 h-7")}</div>
+    <div><h2 class="font-display text-xl font-bold">${esc(s.ad)}</h2><div class="flex flex-wrap gap-2 mt-1">${bransBadge(s.brans)}${badge("neutral", s.grup || (grupDersiMi(s.brans) ? "Grup bekleniyor" : "Bireysel"))}${badge("neutral", s.seviye)}</div></div>
+  </div>`, "mb-6")}
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6">
+    ${statCard("calendar", "#a78bfa", "Ders Programı", s.dersGunu ? `${s.dersGunu} ${s.dersSaati}` : "Planlanıyor", t ? `Öğretmen: ${t.ad}` : "Öğretmen ataması bekleniyor", "setTab('ders')")}
+    ${statCard("check", "#34d399", "Devam Oranı", oran === null ? "-" : "%" + oran, `${s.devam.length} ders kaydı`, "setTab('ders')")}
+    ${statCard("wallet", o.geciken ? "#ef4444" : "#fbbf24", "Kalan Ödeme", TL(o.kalan), o.sonraki ? `Sıradaki: ${tarihTR(o.sonraki.vade)} · ${TL(o.sonraki.kalan)}` : "Ödemeler tamamlandı", "setTab('odeme')")}
+    ${statCard("coffee", "#f472b6", "Kafe Kartı Bakiyesi", s.kartNo ? TL(kartBakiye(s.kartNo)) : "-", s.kartNo ? KART_TIPLERI[kartBul(s.kartNo).tip].ad + " kart" : "", "setTab('kart')")}
+  </div>
+  ${o.geciken ? `<div class="mb-6 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300 flex items-center gap-3">${ikon("alert","w-5 h-5")} Vadesi geçmiş ${o.geciken} taksitiniz bulunuyor. Lütfen sekreterlik ile iletişime geçin.</div>` : ""}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`${cardBaslik("trend", "Son Öğretmen Notu")}${son ? `<div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(son[0])}</span>${puanNoktalari(son[2])}</div><p class="text-sm">${esc(son[1])}</p></div>` : bos("Henüz not girilmedi.")}`)}
+    ${card(`${cardBaslik("check", "Son Dersler")}${devamSeridi(s.devam)}`)}
+  </div>`;
+}
+function veliDersHtml(s) {
+  const t = DB.teachers.find(x => x.id === s.teacherId);
+  const telafi = DB.makeupRequests.filter(r => r.studentId === s.id);
+  return `${sayfaBaslik("Dersler", "& Devam")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`${cardBaslik("calendar", "Ders Bilgisi")}
+      <div class="space-y-2">
+        ${satir('<span class="text-sm text-mut">Branş</span>', bransBadge(s.brans))}
+        ${satir('<span class="text-sm text-mut">Öğretmen</span>', `<span class="text-sm">${esc(t ? t.ad : "Atama bekleniyor")}</span>`)}
+        ${satir('<span class="text-sm text-mut">Grup</span>', `<span class="text-sm">${esc(s.grup || "Bireysel")}</span>`)}
+        ${satir('<span class="text-sm text-mut">Gün / Saat</span>', `<span class="text-sm">${s.dersGunu ? esc(s.dersGunu + " · " + s.dersSaati) : "Planlanıyor"}</span>`)}
+        ${satir('<span class="text-sm text-mut">Kayıt Tarihi</span>', `<span class="text-sm">${tarihTR(s.kayitTarihi)}</span>`)}
+      </div>
+      ${telafi.length ? `<p class="text-sm mt-5 mb-2">Telafi Dersleri</p><div class="space-y-2">${telafi.map(r => satir(`<div><p class="text-sm">${tarihTR(r.onerilenTarih)}</p><p class="text-xs text-mut">Kaçırılan: ${tarihTR(r.dersTarihi)} · ${esc(r.sebep)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum))).join("")}</div>` : ""}`)}
+    ${card(`${cardBaslik("check", "Yoklama Geçmişi", devamOrani(s.devam) === null ? "" : badge("gold", "%" + devamOrani(s.devam)))}
+      <div class="space-y-2 max-h-96 overflow-y-auto">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, d[1] === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi"))).join("") || bos("Henüz yoklama yok.")}</div>`)}
+  </div>`;
+}
+function veliGelisimHtml(s) {
+  return `${sayfaBaslik("Gelişim", "Notları", "Öğretmenin haftalık değerlendirmeleri")}
+  ${card(`<div class="space-y-2">${[...s.haftalikNotlar].reverse().map(n => `<div class="p-4 bg-bg rounded-lg"><div class="flex items-center justify-between mb-2"><span class="text-xs text-mut">${esc(n[0])} · ${esc(ogretmenAd(s.teacherId) || "")}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("") || bos("Henüz gelişim notu girilmedi.")}</div>`, "max-w-3xl")}`;
+}
+function veliOdemeHtml(s) {
+  const o = odemeOzeti(s);
+  return `${sayfaBaslik("Ödemeler")}
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+    ${statCard("receipt", "#fbbf24", "Kayıt Ücreti", TL(s.kayitUcreti), `${s.taksitSayisi} taksit`)}
+    ${statCard("wallet", "#34d399", "Ödenen", TL(o.odenen), `${o.odenenTaksit} taksit`)}
+    ${statCard("clock", o.geciken ? "#ef4444" : "#60a5fa", "Kalan", TL(o.kalan), o.geciken ? `${o.geciken} taksit gecikmiş` : "")}
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`${cardBaslik("calendar", "Taksit Planı")}${taksitPlaniHtml(o)}`)}
+    ${card(`${cardBaslik("receipt", "Yaptığınız Ödemeler")}${tahsilatListesi(s, false)}`)}
+  </div>`;
+}
+function veliKartHtml(s) {
+  const k = s.kartNo && kartBul(s.kartNo);
+  if (!k) return `${sayfaBaslik("Kafe", "Kartı")}${card(bos("Kart tanımlı değil."))}`;
+  const hareket = kartHareketleri(k.no);
+  const buAy = bugun().slice(0, 7);
+  const ayHarcama = hareket.filter(h => h.tur === "harcama" && h.tarih.startsWith(buAy)).reduce((a, h) => a + h.tutar, 0);
+  return `${sayfaBaslik("Kafe", "Kartı", "Kart bakiyesi ve tüm hareketler. Bakiye yüklemesi sekreterlikten yapılır.")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="space-y-6">
+      ${card(`<p class="text-sm text-mut">Güncel Bakiye</p><p class="font-display text-4xl font-bold text-gold mt-1 count-up">${TL(kartBakiye(k.no))}</p>
+        <p class="text-xs text-mut mt-2">Bu ay harcanan: ${TL(ayHarcama)}</p>`)}
+      ${card(`<div class="space-y-4 flex flex-col items-center">${kartGorsel(k, "Veli", s.veli.ad, true)}${kartGorsel(k, "Öğrenci", s.ad, true)}</div>
+        <p class="text-xs text-mut mt-4 text-center">İki kart aynı hesabı kullanır.</p>`)}
+    </div>
+    ${card(`${cardBaslik("receipt", "Kart Hareketleri", `<span class="text-xs text-mut">${hareket.length} işlem</span>`)}${hareketListesi(k.no)}`, "xl:col-span-2 self-start")}
+  </div>`;
+}
+
+/* ================================================================== */
+/* Ortak parçalar: taksit planı, tahsilat listesi                       */
+/* ================================================================== */
+function taksitPlaniHtml(o) {
+  return `<div class="space-y-2">${o.plan.map(p => satir(`<div><span class="text-sm text-mut">Taksit #${p.no}</span><p class="text-xs text-mut">${tarihTR(p.vade)}</p></div>`,
+    `<div class="flex items-center gap-3"><span class="text-sm">${TL(p.tutar)}</span>${badge(TAKSIT_TONE[p.durum], p.durum === "kısmi" ? `kısmi · ${TL(p.kalan)} kaldı` : p.durum)}</div>`)).join("")}</div>`;
+}
+function tahsilatListesi(s, silinebilir) {
+  const liste = [...(s.odemeler || [])].sort((a, b) => b.tarih.localeCompare(a.tarih));
+  if (!liste.length) return bos("Henüz ödeme yok.");
+  return `<div class="space-y-2">${liste.map(p => satir(`<div><p class="text-sm">${TL(p.tutar)} <span class="text-xs text-mut">· ${esc(p.yontem)}</span></p><p class="text-xs text-mut">${tarihTR(p.tarih)}${p.alan ? " · " + esc(p.alan) : ""}${p.not_ ? " · " + esc(p.not_) : ""}</p></div>`,
+    silinebilir ? `<button onclick="odemeSilSor('${s.id}','${p.id}')" title="Ödemeyi sil" class="text-mut hover:text-red-400">${ikon("trash")}</button>` : badge("success", "alındı"))).join("")}</div>`;
+}
+
+/* ================================================================== */
+/* Pencereler (modal)                                                   */
+/* ================================================================== */
+function modalKabuk(icerik, genislik, z) {
+  const anim = MODAL_ANIM && z === 60 + (MODALLAR.length - 1) * 10;
+  return `<div class="fixed inset-0 flex items-start sm:items-center justify-center p-3 sm:p-6 pt-safe bg-black/75 backdrop-blur-sm ${anim ? "fade-in" : ""} overflow-y-auto" style="z-index:${z}" onclick="if(event.target===this) modalKapat()">
+    <div class="bg-card border border-line rounded-xl w-full ${genislik || "max-w-lg"} my-auto shadow-2xl">${icerik}</div></div>`;
+}
+function modalBaslik(ust, baslik, sag) {
+  return `<div class="flex items-start justify-between gap-3 p-5 border-b border-line">
+    <div class="min-w-0">${ust ? `<p class="text-xs uppercase tracking-widest text-gold">${esc(ust)}</p>` : ""}<h3 class="font-display text-xl font-semibold text-neutral-50 mt-0.5 truncate">${esc(baslik)}</h3></div>
+    <div class="flex items-center gap-2 shrink-0">${sag || ""}<button onclick="modalKapat()" class="text-mut hover:text-neutral-100 p-1">${ikon("x","w-5 h-5")}</button></div></div>`;
+}
+function modalHtml(m, z) {
+  if (m.tip === "ogrenci") return ogrenciModal(m, z);
+  if (m.tip === "odeme") return odemeModal(m, z);
+  if (m.tip === "kartYukle") return kartYukleModal(m, z);
+  if (m.tip === "kartDetay") return kartDetayModal(m, z);
+  if (m.tip === "ogretmenForm") return ogretmenFormModal(m, z);
+  if (m.tip === "ogretmenDetay") return ogretmenDetayModal(m, z);
+  if (m.tip === "kayitSonuc") return kayitSonucModal(m, z);
+  if (m.tip === "onay") return modalKabuk(`<div class="p-6">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${m.tehlike ? "bg-red-500/15 text-red-400" : "bg-gold/15 text-gold"}">${ikon(m.tehlike ? "trash" : "alert","w-6 h-6")}</div>
+      <h3 class="font-display text-xl font-semibold">${esc(m.baslik)}</h3><p class="text-sm text-mut mt-2">${esc(m.mesaj)}</p>
+      <div class="flex justify-end gap-2 mt-6"><button onclick="modalKapat()" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button>
+      <button onclick="${m.aksiyon}" class="${m.tehlike ? "inline-flex items-center gap-2 bg-red-500 hover:bg-red-400 text-white font-medium rounded-lg px-4 py-2 text-sm" : BTN.p}">${esc(m.buton)}</button></div></div>`, "max-w-md", z);
+  return "";
+}
+
+/* ---------- Öğrenci detayı (sekmeli) ---------- */
+const OGR_SEKMELER = [
+  ["genel","Genel","user"], ["veli","Veli & Görüşme","phone"], ["ders","Ders & Öğretmen","calendar"], ["devam","Devam","check"],
+  ["gelisim","Gelişim","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"],
+];
+function ogrenciModal(m, z) {
+  const s = ogrenci(m.sid);
+  if (!s) return modalKabuk(`${modalBaslik("", "Kayıt bulunamadı")}<div class="p-5">${bos("Bu öğrenci silinmiş olabilir.")}</div>`, "max-w-md", z);
+  const o = odemeOzeti(s); const oran = devamOrani(s.devam); const t = DB.teachers.find(x => x.id === s.teacherId);
+  const kart = s.kartNo && kartBul(s.kartNo);
+  const sekme = m.sekme || "genel";
+  const govdeMap = { genel: ogrGenel, veli: ogrVeli, ders: ogrDers, devam: ogrDevam, gelisim: ogrGelisim, odeme: ogrOdeme, kart: ogrKart };
+  const ust = `<div class="p-5 border-b border-line">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-4 min-w-0">
+        <div class="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 text-lg font-display font-bold" style="background:${bransRenk(s.brans)}20;color:${bransRenk(s.brans)}">${initials(s.ad)}</div>
+        <div class="min-w-0"><h2 class="font-display text-xl font-bold truncate">${esc(s.ad)}</h2>
+          <div class="flex flex-wrap items-center gap-2 mt-1">${bransBadge(s.brans)}${badge("neutral", `${s.yas} yaş`)}${badge("neutral", s.grup || (grupDersiMi(s.brans) ? "Grup yok" : "Bireysel"))}${badge(ODEME_TONE[o.durum], o.durum)}</div></div>
+      </div>
+      <button onclick="modalKapat()" class="text-mut hover:text-neutral-100 p-1">${ikon("x","w-5 h-5")}</button>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+      ${[["Öğretmen", t ? t.ad : "Atanmadı"], ["Devam", oran === null ? "-" : "%" + oran], ["Kalan Ödeme", TL(o.kalan)], ["Kart Bakiyesi", kart ? TL(kartBakiye(kart.no)) : "-"]].map(([a, b]) => `<div class="p-2.5 bg-bg rounded-lg"><p class="text-[11px] text-mut">${a}</p><p class="text-sm font-medium truncate">${esc(b)}</p></div>`).join("")}
+    </div>
+    <div class="flex flex-wrap gap-2 mt-4">
+      <button onclick="odemeAc('${s.id}')" ${o.kalan > 0 ? "" : "disabled"} class="${BTN.ok} disabled:opacity-40">${ikon("plus","w-3.5 h-3.5")} Ödeme Al</button>
+      ${kart ? `<button onclick="kartYukleAc('${kart.no}')" class="${BTN.s}">${ikon("coffee","w-3.5 h-3.5")} Bakiye Yükle</button>` : ""}
+      <button onclick="disaAktarOgrenciDetay('${s.id}')" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Excel</button>
+      <button onclick="kayitSilSor('${s.id}')" class="${BTN.d} ml-auto">${ikon("trash","w-3.5 h-3.5")} Kaydı Sil</button>
+    </div>
+  </div>
+  <div class="flex gap-1 px-3 border-b border-line overflow-x-auto">${OGR_SEKMELER.map(([id, ad, ik]) => `<button onclick="modalGuncelle({sekme:'${id}', duzenle:false})" class="flex items-center gap-1.5 text-sm px-3 py-3 border-b-2 whitespace-nowrap transition ${sekme === id ? "border-gold text-gold" : "border-transparent text-mut hover:text-neutral-200"}">${ikon(ik,"w-3.5 h-3.5")}${ad}</button>`).join("")}</div>
+  <div class="p-5 max-h-[55vh] overflow-y-auto">${govdeMap[sekme](s, m, o)}</div>`;
+  return modalKabuk(ust, "max-w-4xl", z);
+}
+function bilgi(a, b) { return `<div class="p-3 bg-bg rounded-lg"><p class="text-xs text-mut mb-0.5">${esc(a)}</p><p class="text-sm">${b}</p></div>`; }
+function ogrGenel(s, m) {
+  if (m.duzenle) return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>${lbl("Ad Soyad", 1)}<input id="dzAd" value="${esc(s.ad)}" class="${INP}" /></div>
+      <div class="grid grid-cols-2 gap-3"><div>${lbl("Yaş", 1)}<input id="dzYas" type="number" value="${s.yas}" class="${INP}" /></div>
+        <div>${lbl("Seviye")}<select id="dzSeviye" class="${INP}">${["Başlangıç","Orta","İleri"].map(x => `<option ${x === s.seviye ? "selected" : ""}>${x}</option>`).join("")}</select></div></div>
+      <div>${lbl("İlgi Alanı")}<input id="dzIlgi" value="${esc(s.ilgiAlani)}" class="${INP}" /></div>
+      <div>${lbl("Beklenti")}<input id="dzBeklenti" value="${esc(s.beklenti)}" class="${INP}" /></div>
+      <div>${lbl("Veli Ad Soyad")}<input id="dzVeliAd" value="${esc(s.veli.ad)}" class="${INP}" /></div>
+      <div>${lbl("Veli Telefon", 1)}<input id="dzVeliTel" value="${esc(s.veli.tel)}" class="${INP}" /></div>
+      <div class="sm:col-span-2">${lbl("Veli E-posta")}<input id="dzVeliEmail" value="${esc(s.veli.email || "")}" class="${INP}" /></div>
+    </div>
+    <div class="flex justify-end gap-2 mt-5"><button onclick="modalGuncelle({duzenle:false})" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button><button onclick="ogrenciBilgiKaydet('${s.id}')" class="${BTN.p}">Kaydet</button></div>`;
+  return `<div class="flex justify-end mb-3"><button onclick="modalGuncelle({duzenle:true})" class="${BTN.s}">${ikon("edit","w-3.5 h-3.5")} Düzenle</button></div>
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      ${bilgi("Ad Soyad", esc(s.ad))}${bilgi("Yaş", s.yas)}${bilgi("Seviye", esc(s.seviye))}
+      ${bilgi("Branş", bransBadge(s.brans))}${bilgi("Grup", esc(s.grup || (grupDersiMi(s.brans) ? "Atanmadı" : "Bireysel")))}${bilgi("Kayıt Tarihi", tarihTR(s.kayitTarihi))}
+      ${bilgi("İlgi Alanı", esc(s.ilgiAlani || "-"))}${bilgi("Beklenti", esc(s.beklenti || "-"))}${bilgi("Veli", `${esc(s.veli.ad)}<br><span class="text-xs text-mut">${telGoster(s.veli.tel)}</span>`)}
+    </div>`;
+}
+function ogrVeli(s) {
+  const kardesler = DB.students.filter(x => x.id !== s.id && telEsit(x.veli.tel, s.veli.tel));
+  return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-3">
+      <p class="text-sm font-medium">Veli Bilgileri</p>
+      <div class="space-y-2">
+        ${satir(`<span class="flex items-center gap-2 text-sm text-mut">${ikon("user")} Ad Soyad</span>`, `<span class="text-sm">${esc(s.veli.ad)}</span>`)}
+        ${satir(`<span class="flex items-center gap-2 text-sm text-mut">${ikon("phone")} Telefon</span>`, `<a href="tel:${sadeceRakam(s.veli.tel)}" class="text-sm hover:text-gold">${telGoster(s.veli.tel)}</a>`)}
+        ${satir(`<span class="flex items-center gap-2 text-sm text-mut">${ikon("mail")} E-posta</span>`, `<span class="text-sm">${esc(s.veli.email || "-")}</span>`)}
+      </div>
+      <div class="p-4 rounded-lg border border-gold/30 bg-gold/5 mt-4">
+        <p class="text-sm font-medium flex items-center gap-2 text-gold">${ikon("key")} Veli Paneli Girişi</p>
+        <p class="text-xs text-mut mt-2">Telefon: <span class="text-neutral-200 font-mono">${telGoster(s.veli.tel)}</span></p>
+        <p class="text-xs text-mut mt-1">Şifre: <span class="text-neutral-200 font-mono text-sm tracking-widest">${esc(s.veli.sifre)}</span></p>
+        <button onclick="veliSifreYenile('${s.id}')" class="${BTN.s} mt-3">Yeni şifre üret</button>
+      </div>
+      ${kardesler.length ? `<p class="text-xs text-mut mt-3">Aynı veliye bağlı diğer öğrenciler: ${kardesler.map(k => `<span class="text-neutral-200 cursor-pointer hover:text-gold" onclick="modalKapat(); ogrenciAc('${k.id}')">${esc(k.ad)}</span>`).join(", ")}</p>` : ""}
+    </div>
+    <div><p class="text-sm font-medium mb-3">Ön Görüşme Cevapları</p>
+      <div class="space-y-3">${(s.veliSoruCevap || []).map(qa => `<div><p class="text-xs text-mut mb-1">${esc(qa[0])}</p><p class="text-sm bg-bg rounded-lg p-2.5">${esc(qa[1])}</p></div>`).join("") || bos("Ön görüşme notu girilmemiş.")}</div></div>
+  </div>`;
+}
+function ogrDers(s) {
+  const uygun = DB.teachers.filter(t => t.brans === s.brans);
+  const telafi = DB.makeupRequests.filter(r => r.studentId === s.id);
+  const atama = DB.dersAtamaTalepleri.filter(r => r.studentId === s.id);
+  return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <p class="text-sm font-medium mb-3">Öğretmen & Program</p>
+      ${ROLE === "yonetici" ? `${lbl("Öğretmen ataması")}<select onchange="ataOgretmen('${s.id}', this.value)" class="${INP} mb-2"><option value="">Atanmadı</option>${uygun.map(t => `<option value="${t.id}" ${t.id === s.teacherId ? "selected" : ""}>${esc(t.ad)}${t.grup ? " — " + esc(t.grup) : ""}</option>`).join("")}</select>
+        ${!uygun.length ? '<p class="text-xs text-orange-400 mb-2">Bu branşta tanımlı öğretmen yok.</p>' : ""}` : satir('<span class="text-sm text-mut">Öğretmen</span>', `<span class="text-sm">${esc(ogretmenAd(s.teacherId) || "Atanmadı")}</span>`)}
+      <div class="space-y-2 mt-2">${satir('<span class="text-sm text-mut">Ders günü / saati</span>', `<span class="text-sm">${s.dersGunu ? esc(s.dersGunu + " · " + s.dersSaati) : "Planlanmadı"}</span>`)}</div>
+      <p class="text-xs text-mut mt-2">Gün/saat değişikliği için ${ROLE === "yonetici" ? "Ders Takvimi" : "Ders Atama"} sayfasını kullanın.</p>
+    </div>
+    <div class="space-y-5">
+      <div><p class="text-sm font-medium mb-2">Telafi Talepleri</p><div class="space-y-2">${telafi.map(r => satir(`<div><p class="text-sm">${tarihTR(r.dersTarihi)} → ${tarihTR(r.onerilenTarih)}</p><p class="text-xs text-mut">${esc(r.sebep)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum))).join("") || '<p class="text-xs text-mut">Yok.</p>'}</div></div>
+      <div><p class="text-sm font-medium mb-2">Ders Atama Talepleri</p><div class="space-y-2">${atama.map(r => satir(`<div><p class="text-sm">${esc(ogretmenAd(r.teacherId) || "-")}</p><p class="text-xs text-mut">${tarihTR(r.tarih)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum))).join("") || '<p class="text-xs text-mut">Yok.</p>'}</div></div>
+    </div>
+  </div>`;
+}
+function ogrDevam(s) {
+  const oran = devamOrani(s.devam); const gelmedi = s.devam.filter(d => d[1] === "yok").length;
+  return `<div class="grid grid-cols-3 gap-3 mb-5">${bilgi("Devam Oranı", oran === null ? "-" : "%" + oran)}${bilgi("Katıldığı", s.devam.length - gelmedi)}${bilgi("Devamsızlık", gelmedi)}</div>
+    <div class="mb-5">${devamSeridi(s.devam)}</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, d[1] === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi"))).join("") || bos("Henüz yoklama kaydı yok.")}</div>`;
+}
+function ogrGelisim(s) {
+  const r = AI.risk[s.id]; const toneMap = { iyi:"success", dikkat:"warning", riskli:"danger" };
+  return `<div class="flex items-center justify-between gap-3 mb-4"><p class="text-sm font-medium">Haftalık Gelişim Notları</p>
+      <button onclick="analizEt('${s.id}')" ${(r && r.loading) || !s.haftalikNotlar.length ? "disabled" : ""} class="${BTN.v}">${ikon("sparkles","w-3.5 h-3.5")} ${r && r.loading ? "Analiz ediliyor..." : "AI Risk Analizi"}</button></div>
+    ${r && r.error ? `<p class="text-xs text-red-400 mb-3">${esc(r.error)}</p>` : ""}
+    ${r && r.data ? `<div class="p-4 rounded-lg border border-violet-500/30 bg-violet-500/5 mb-4">${badge(toneMap[r.data.durum] || "neutral", r.data.durum)}<p class="text-sm mt-2">${esc(r.data.ozet)}</p><p class="text-xs text-gold mt-2">Öneri: ${esc(r.data.oneri)}</p></div>` : ""}
+    <div class="space-y-2">${[...s.haftalikNotlar].reverse().map(n => `<div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(n[0])} · ${esc(ogretmenAd(s.teacherId) || "")}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("") || bos("Henüz gelişim notu girilmemiş.")}</div>`;
+}
+function ogrOdeme(s, m, o) {
+  return `<div class="grid grid-cols-3 gap-3 mb-5">${bilgi("Kayıt Ücreti", TL(s.kayitUcreti) + ` <span class="text-xs text-mut">/ ${s.taksitSayisi} taksit</span>`)}${bilgi("Ödenen", `<span class="text-green-400">${TL(o.odenen)}</span>`)}${bilgi("Kalan", `<span class="${o.geciken ? "text-red-400" : ""}">${TL(o.kalan)}</span>`)}</div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div><p class="text-sm font-medium mb-3">Taksit Planı</p>${taksitPlaniHtml(o)}</div>
+      <div><div class="flex items-center justify-between mb-3"><p class="text-sm font-medium">Tahsilatlar</p>${o.kalan > 0 ? `<button onclick="odemeAc('${s.id}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Ödeme Al</button>` : ""}</div>${tahsilatListesi(s, true)}</div>
+    </div>`;
+}
+function ogrKart(s) {
+  const k = s.kartNo && kartBul(s.kartNo);
+  if (!k) return bos("Bu öğrenciye kart tanımlanmamış.");
+  return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-4"><div class="grid grid-cols-2 gap-3">${kartGorsel(k, "Veli", s.veli.ad, true)}${kartGorsel(k, "Öğrenci", s.ad, true)}</div>
+      <div class="flex items-center justify-between p-4 bg-bg rounded-lg"><span class="text-sm text-mut">Güncel bakiye</span><span class="font-display text-2xl font-bold text-gold">${TL(kartBakiye(k.no))}</span></div>
+      <div class="flex flex-wrap gap-2"><button onclick="kartYukleAc('${k.no}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Bakiye Yükle</button><button onclick="kartDetayAc('${k.no}')" class="${BTN.s}">Kart Ayarları</button></div>
+    </div>
+    <div><p class="text-sm font-medium mb-3">Kart Hareketleri</p><div class="max-h-96 overflow-y-auto">${hareketListesi(k.no)}</div></div>
+  </div>`;
+}
+
+/* ---------- Ödeme alma ---------- */
+function odemeModal(m, z) {
+  const s = ogrenci(m.sid); if (!s) return "";
+  const o = odemeOzeti(s); const oneri = o.sonraki ? o.sonraki.kalan : o.kalan;
+  return modalKabuk(`${modalBaslik("Tahsilat", s.ad + " — Ödeme Al")}
+    <div class="p-5">
+      <div class="grid grid-cols-3 gap-2 mb-5">${bilgi("Toplam", TL(s.kayitUcreti))}${bilgi("Ödenen", `<span class="text-green-400">${TL(o.odenen)}</span>`)}${bilgi("Kalan", `<span class="text-gold">${TL(o.kalan)}</span>`)}</div>
+      ${o.sonraki ? `<p class="text-xs text-mut mb-3">Sıradaki: Taksit #${o.sonraki.no} · vade ${tarihTR(o.sonraki.vade)} ${o.sonraki.durum === "gecikti" ? badge("danger","gecikti") : ""}</p>` : ""}
+      ${lbl("Tutar (₺)", 1)}<input id="odTutar" type="number" min="1" max="${o.kalan}" value="${oneri}" class="${INP} text-lg font-medium" />
+      <div class="flex flex-wrap gap-1.5 mt-2 mb-4">
+        ${o.sonraki ? `<button onclick="odemeTutarDoldur(${o.sonraki.kalan})" class="${BTN.s}">1 taksit (${TL(o.sonraki.kalan)})</button>` : ""}
+        ${o.geciken > 1 ? `<button onclick="odemeTutarDoldur(${o.plan.filter(p => p.durum === "gecikti").reduce((a, p) => a + p.kalan, 0)})" class="${BTN.s}">Gecikenlerin tümü</button>` : ""}
+        <button onclick="odemeTutarDoldur(${o.kalan})" class="${BTN.s}">Tamamını kapat (${TL(o.kalan)})</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>${lbl("Ödeme Tarihi", 1)}<input id="odTarih" type="date" value="${bugun()}" class="${INP}" /></div>
+        <div>${lbl("Yöntem")}<select id="odYontem" class="${INP}"><option>Nakit</option><option>Kredi Kartı</option><option>Havale/EFT</option></select></div>
+      </div>
+      ${lbl("Not")}<input id="odNot" placeholder="Opsiyonel — örn. makbuz no" class="${INP}" />
+      <div class="flex justify-end gap-2 mt-6"><button onclick="modalKapat()" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button><button onclick="odemeKaydet('${s.id}')" class="${BTN.p}">${ikon("check")} Ödemeyi Kaydet</button></div>
+    </div>`, "max-w-lg", z);
+}
+
+/* ---------- Kart bakiye yükleme & detay ---------- */
+function kartYukleModal(m, z) {
+  const k = kartBul(m.no); if (!k) return ""; const s = ogrenci(k.studentId);
+  return modalKabuk(`${modalBaslik("Kafe Kartı", "Bakiye Yükle")}
+    <div class="p-5">
+      <div class="flex justify-center mb-4">${kartGorsel(k, "Öğrenci", s ? s.ad : "", true)}</div>
+      <div class="flex items-center justify-between p-3 bg-bg rounded-lg mb-4"><span class="text-sm text-mut">Mevcut bakiye</span><span class="font-display text-xl font-bold text-gold">${TL(kartBakiye(k.no))}</span></div>
+      ${lbl("Yüklenecek Tutar (₺)", 1)}<input id="kyTutar" type="number" min="1" placeholder="0" class="${INP} text-lg font-medium" />
+      <div class="flex flex-wrap gap-1.5 mt-2 mb-4">${[100, 250, 500, 1000, 2000].map(t => `<button onclick="kyTutarDoldur(${t})" class="${BTN.s}">${TL(t)}</button>`).join("")}</div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>${lbl("Ödeme Yöntemi")}<select id="kyYontem" class="${INP}"><option>Nakit</option><option>Kredi Kartı</option><option>Havale/EFT</option></select></div>
+        <div>${lbl("Not")}<input id="kyNot" placeholder="Opsiyonel" class="${INP}" /></div>
+      </div>
+      <div class="flex justify-end gap-2 mt-6"><button onclick="modalKapat()" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button><button onclick="kartYukle('${k.no}')" class="${BTN.p}">${ikon("plus")} Yükle</button></div>
+    </div>`, "max-w-md", z);
+}
+function kartDetayModal(m, z) {
+  const k = kartBul(m.no); if (!k) return ""; const s = ogrenci(k.studentId);
+  return modalKabuk(`${modalBaslik("Kafe Kartı", kartNoGoster(k.no), `<button onclick="window.print()" class="${BTN.s} print-gizle yalniz-web">${ikon("printer","w-3.5 h-3.5")} Yazdır</button>`)}
+    <div class="p-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="space-y-4">
+        <div class="print-alan p-2">${kartIkiKopya(k, s)}</div>
+        <div class="flex items-center justify-between p-4 bg-bg rounded-lg"><span class="text-sm text-mut">Bakiye</span><span class="font-display text-2xl font-bold text-gold">${TL(kartBakiye(k.no))}</span></div>
+        ${s ? `<p class="text-sm">Öğrenci: <span class="cursor-pointer hover:text-gold" onclick="ogrenciAc('${s.id}','kart')">${esc(s.ad)}</span> · Veli: ${esc(s.veli.ad)}</p>` : ""}
+        <div>${lbl("Kart Tipi")}<div class="flex gap-2">${Object.entries(KART_TIPLERI).map(([key, t]) => `<button onclick="kartTipDegistir('${k.no}','${key}')" class="text-xs px-3 py-1.5 rounded-lg border ${k.tip === key ? "border-gold text-gold bg-gold/10" : "border-line text-mut hover:bg-accent"}">${t.ad}</button>`).join("")}</div></div>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="kartYukleAc('${k.no}')" class="${BTN.ok}">${ikon("plus","w-3.5 h-3.5")} Bakiye Yükle</button>
+          <button onclick="kartDurumDegistir('${k.no}')" class="${k.aktif ? BTN.d : BTN.ok}">${ikon("ban","w-3.5 h-3.5")} ${k.aktif ? "Kartı Dondur" : "Kartı Aktifleştir"}</button>
+          <button onclick="kartYenile('${k.no}')" class="${BTN.s}">${ikon("repeat","w-3.5 h-3.5")} Kayıp — Yeni Numara</button>
+        </div>
+      </div>
+      <div><p class="text-sm font-medium mb-3">Hareketler</p><div class="max-h-[50vh] overflow-y-auto">${hareketListesi(k.no)}</div></div>
+    </div>`, "max-w-4xl", z);
+}
+
+/* ---------- Öğretmen formu & detay ---------- */
+function ogretmenFormModal(m, z) {
+  const t = m.tid ? DB.teachers.find(x => x.id === m.tid) : null;
+  const b = t ? t.brans : "Piyano";
+  return modalKabuk(`${modalBaslik(t ? "Öğretmen Düzenle" : "Yeni Öğretmen Kaydı", t ? t.ad : "Öğretmen Bilgileri")}
+    <div class="p-5 max-h-[70vh] overflow-y-auto">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">${lbl("Ad Soyad", 1)}<input id="oAd" value="${esc(t ? t.ad : "")}" class="${INP}" /></div>
+        <div>${lbl("Branş", 1)}<select id="oBrans" onchange="document.getElementById('oGrupKutu').style.display = ['${BRANSLAR().filter(grupDersiMi).join("','")}'].includes(this.value) ? '' : 'none'" class="${INP}">${BRANSLAR().map(x => `<option ${x === b ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+        <div id="oGrupKutu" style="${grupDersiMi(b) ? "" : "display:none"}">${lbl("Grup")}<input id="oGrup" list="grupListe" value="${esc(t && t.grup ? t.grup : "Grup 1")}" class="${INP}" /><datalist id="grupListe"><option>Grup 1</option><option>Grup 2</option><option>Grup 3</option><option>Grup 4</option></datalist></div>
+        <div>${lbl("Tecrübe (yıl)")}<input id="oTecrube" type="number" min="0" value="${t ? t.tecrube : ""}" class="${INP}" /></div>
+        <div>${lbl("İşe Başlangıç")}<input id="oBaslangic" type="date" value="${t ? t.baslangic || "" : bugun()}" class="${INP}" /></div>
+        <div>${lbl("Telefon")}<input id="oTel" value="${esc(t ? t.tel || "" : "")}" placeholder="05xx xxx xx xx" class="${INP}" /></div>
+        <div>${lbl("Hitap ettiği yaş aralığı")}<input id="oYas" value="${esc(t ? t.yasAraligi : "")}" placeholder="${esc(BRANS_BILGI[b].yasAraligi)}" class="${INP}" /></div>
+        <div class="sm:col-span-2">${lbl("Uzmanlık")}<input id="oUzmanlik" value="${esc(t ? t.uzmanlik : "")}" placeholder="Boş bırakılırsa branş varsayılanı kullanılır" class="${INP}" /></div>
+        <div class="sm:col-span-2">${lbl("Pedagojik Tarz")}<input id="oTarz" value="${esc(t ? t.tarz : "")}" placeholder="AI eşleştirmede kullanılır" class="${INP}" /></div>
+        <div class="sm:col-span-2">${lbl("Notlar")}<textarea id="oNot" rows="2" class="${INP}">${esc(t ? t.not_ || "" : "")}</textarea></div>
+      </div>
+      <div class="mt-5 p-4 rounded-lg border border-line bg-bg">
+        <p class="text-sm font-medium flex items-center gap-2 mb-3">${ikon("key")} Panel Giriş Hesabı</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>${lbl("E-posta", 1)}<input id="oEmail" type="email" value="${esc(t ? t.email || "" : "")}" class="${INP}" /></div>
+          <div>${lbl(t ? "Yeni Şifre (değiştirmek için)" : "Şifre", !t)}<input id="oSifre" type="text" placeholder="${t ? "Boş bırakırsanız değişmez" : "En az 6 karakter"}" class="${INP}" /></div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-6"><button onclick="modalKapat()" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button><button onclick="ogretmenKaydet(${t ? `'${t.id}'` : "null"})" class="${BTN.p}">${ikon("check")} ${t ? "Güncelle" : "Öğretmeni Kaydet"}</button></div>
+    </div>`, "max-w-2xl", z);
+}
+function ogretmenDetayModal(m, z) {
+  const t = DB.teachers.find(x => x.id === m.tid); if (!t) return "";
+  const ogr = DB.students.filter(s => s.teacherId === t.id);
+  return modalKabuk(`${modalBaslik(t.brans + (t.grup ? " · " + t.grup : " · Bireysel"), t.ad, `<button onclick="ogretmenFormAc('${t.id}')" class="${BTN.s}">${ikon("edit","w-3.5 h-3.5")} Düzenle</button>`)}
+    <div class="p-5 grid grid-cols-1 lg:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
+      <div class="space-y-3">
+        <div class="grid grid-cols-2 gap-2">${bilgi("Tecrübe", t.tecrube + " yıl")}${bilgi("Başlangıç", tarihTR(t.baslangic))}${bilgi("Telefon", esc(t.tel || "-"))}${bilgi("E-posta", esc(t.email || "-"))}</div>
+        ${bilgi("Uzmanlık", esc(t.uzmanlik))}${bilgi("Pedagojik Tarz", esc(t.tarz))}${bilgi("Yaş Aralığı", esc(t.yasAraligi))}
+        ${t.not_ ? bilgi("Notlar", esc(t.not_)) : ""}
+        <div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-2"><p class="text-xs text-mut">Kurum yoklaması</p>${devamOrani(t.kurumYoklama) === null ? "" : badge("gold", "%" + devamOrani(t.kurumYoklama))}</div>
+          ${devamSeridi(t.kurumYoklama || [])}
+          ${ROLE === "yonetici" ? `<div class="flex flex-wrap items-center gap-2 mt-3"><input id="kyTarih" type="date" value="${bugun()}" class="${INP} !w-auto !py-1.5" /><button onclick="kurumYoklamaEkle('${t.id}','var')" class="${BTN.ok}">Geldi</button><button onclick="kurumYoklamaEkle('${t.id}','yok')" class="${BTN.d}">Gelmedi</button></div>` : ""}</div>
+      </div>
+      <div><p class="text-sm font-medium mb-3">Öğrencileri (${ogr.length})</p><div class="space-y-2">${ogr.map(s => satir(`<div><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut">${s.dersGunu ? esc(s.dersGunu + " " + s.dersSaati) : "saat yok"}</p></div>`, devamOrani(s.devam) === null ? "" : badge("neutral", "%" + devamOrani(s.devam)), `modalKapat(); ogrenciAc('${s.id}')`)).join("") || bos("Atanmış öğrenci yok.")}</div></div>
+    </div>`, "max-w-4xl", z);
+}
+
+/* ---------- Kayıt sonucu (kart + veli şifresi) ---------- */
+function kayitSonucModal(m, z) {
+  const s = ogrenci(m.sid); if (!s) return ""; const k = kartBul(s.kartNo);
+  return modalKabuk(`${modalBaslik("Kayıt Tamamlandı", s.ad, `<button onclick="window.print()" class="${BTN.s} print-gizle yalniz-web">${ikon("printer","w-3.5 h-3.5")} Yazdır</button>`)}
+    <div class="p-5 print-alan">
+      <p class="text-sm text-mut mb-4">Aşağıdaki kartlar basılıp veli ve öğrenciye teslim edilmelidir. Numara rastgele üretildi; iki kopya aynı hesabı kullanır.</p>
+      ${kartIkiKopya(k, s)}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+        <div class="p-4 rounded-lg border border-gold/30 bg-gold/5">
+          <p class="text-sm font-medium text-gold flex items-center gap-2">${ikon("key")} Veli Paneli Girişi</p>
+          <p class="text-xs text-mut mt-2">Telefon: <span class="text-neutral-100 font-mono">${telGoster(s.veli.tel)}</span></p>
+          <p class="text-xs text-mut mt-1">Şifre: <span class="text-neutral-100 font-mono text-base tracking-widest">${esc(s.veli.sifre)}</span></p>
+          ${m.kardes ? '<p class="text-xs text-mut mt-2">Bu veli daha önce kayıtlı; mevcut şifresi kullanıldı.</p>' : ""}
+        </div>
+        <div class="p-4 rounded-lg bg-bg">
+          <p class="text-sm font-medium">Sonraki adım</p>
+          <p class="text-xs text-mut mt-2">Öğrenci “atama bekliyor” durumunda. Yönetici AI Eşleştirme’den öğretmen atayabilir ya da Ders Atama talebi gönderebilirsiniz.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap justify-end gap-2 mt-6 print-gizle">
+        <button onclick="MODALLAR=[]; ogrenciAc('${s.id}')" class="${BTN.s} !text-sm !px-4 !py-2">Öğrenci Detayı</button>
+        <button onclick="modalKapat()" class="${BTN.p}">Yeni Kayda Devam</button>
+      </div>
+    </div>`, "max-w-3xl", z);
+}
+
+/* ================================================================== */
+/* Kabuk: menü, üst bar                                                 */
+/* ================================================================== */
+function menuTanimi() {
+  const bek = (liste) => liste.filter(r => r.durum === "beklemede").length;
+  const gecikmis = () => DB.students.filter(s => odemeOzeti(s).geciken > 0).length;
+  if (ROLE === "yonetici") return [
+    { baslik: null, ogeler: [["ozet","Dashboard","dashboard"]] },
+    { baslik:"Eğitim", ogeler: [["ogrenciler","Öğrenciler","users"], ["ogretmenler","Öğretmenler","cap"], ["takvim","Ders Takvimi","calendar"], ["devam","Yoklama","check"], ["telafi","Telafi Talepleri","repeat", bek(DB.makeupRequests)], ["dersonay","Ders Atama","clipboard", bek(DB.dersAtamaTalepleri)]] },
+    { baslik:"Finans", ogeler: [["finans","Finans & Taksit","wallet", gecikmis()], ["kart","Kafe Kartları","coffee"]] },
+    { baslik:"Yapay Zeka", ogeler: [["eslestirme","AI Eşleştirme","sparkles", DB.students.filter(s => !s.teacherId).length], ["risk","AI Risk Analizi","shield"]] },
+  ];
+  if (ROLE === "sekreter") return [
+    { baslik: null, ogeler: [["yeni","Yeni Kayıt","userplus"], ["ogrenciler","Öğrenciler","users"]] },
+    { baslik:"Eğitim", ogeler: [["yoklama","Yoklama","check"], ["dersatama","Ders Atama","clipboard"], ["telafi","Telafi Talepleri","repeat", bek(DB.makeupRequests)]] },
+    { baslik:"Finans", ogeler: [["finans","Tahsilat & Hatırlatma","wallet", gecikmis()], ["kart","Kafe Kartları","coffee"]] },
+  ];
+  if (ROLE === "ogretmen") return [{ baslik: null, ogeler: [["yoklama","Yoklama Al","check"], ["ogrencilerim","Öğrencilerim","users"], ["gelisim","Haftalık Gelişim","trend"], ["telafi","Telafi Planlama","repeat"]] }];
+  if (ROLE === "kasa") return [{ baslik: null, ogeler: [["satis","Kafe Kasası","coffee"]] }];
+  if (ROLE === "veli") return [{ baslik: null, ogeler: [["ozet","Özet","home"], ["ders","Dersler & Devam","calendar"], ["gelisim","Gelişim Notları","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"]] }];
+  return [];
+}
+function sidebarHtml() {
+  const menu = menuTanimi();
+  return `
+  <div class="fixed inset-0 z-40 bg-black/60 transition-opacity lg:hidden ${MOBIL_MENU_ACIK ? "" : "pointer-events-none opacity-0"}" onclick="mobilMenuKapat()"></div>
+  <aside class="fixed left-0 top-0 z-50 h-screen w-64 bg-card border-r border-line flex flex-col pt-safe pb-safe transform transition-transform duration-200 lg:translate-x-0 ${MOBIL_MENU_ACIK ? "translate-x-0" : "-translate-x-full"}">
+    <div class="p-5 border-b border-line">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gold/20 text-gold flex items-center justify-center">${ikon("music","w-5 h-5")}</div>
+        <div class="flex-1"><h1 class="font-display text-lg font-semibold text-gold leading-tight">7Sanat</h1><p class="text-xs text-mut">Afyon</p></div>
+        <button onclick="mobilMenuKapat()" class="lg:hidden text-mut hover:text-neutral-100">${ikon("x","w-5 h-5")}</button>
+      </div>
+      ${staff("mt-3")}
+    </div>
+    <nav class="flex-1 overflow-y-auto py-4 px-3">
+      ${menu.map(g => `${g.baslik ? `<p class="px-3 mt-5 mb-2 text-[11px] uppercase tracking-wider text-neutral-600">${esc(g.baslik)}</p>` : ""}
+        <ul class="space-y-1">${g.ogeler.map(([id, ad, ik, n]) => `<li><button onclick="setTab('${id}')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${TABS[ROLE] === id ? "bg-gold/15 text-gold font-medium" : "text-mut hover:bg-accent hover:text-neutral-100"}">
+          ${ikon(ik)}<span class="flex-1 text-left">${esc(ad)}</span>${n ? `<span class="text-[11px] px-1.5 py-0.5 rounded-full ${TABS[ROLE] === id ? "bg-gold/25" : "bg-gold/15 text-gold"}">${n}</span>` : ""}</button></li>`).join("")}</ul>`).join("")}
+    </nav>
+    <div class="p-4 border-t border-line">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gold/15 text-gold flex items-center justify-center text-xs font-semibold">${initials(USER.ad)}</div>
+        <div class="min-w-0 flex-1"><p class="text-sm font-medium truncate">${esc(USER.ad)}</p><p class="text-xs text-mut truncate">${esc(USER.unvan)}</p></div>
+      </div>
+      ${ROLE === "yonetici" ? `<button onclick="sifirlaVeriler()" class="w-full text-left text-xs text-neutral-600 hover:text-mut mt-3">Demo verilerini sıfırla</button>` : ""}
+      <p class="text-[10px] text-neutral-600 mt-2">${SUNUCU ? "● Sunucuya kaydediliyor" : "○ Çevrimdışı — bu tarayıcıda saklanıyor"}</p>
+    </div>
+  </aside>`;
+}
+function topBarHtml() {
+  const bildirim = ROLE === "yonetici" ? DB.makeupRequests.filter(r => r.durum === "beklemede").length + DB.dersAtamaTalepleri.filter(r => r.durum === "beklemede").length
+    : ROLE === "sekreter" ? DB.makeupRequests.filter(r => r.durum === "beklemede").length : 0;
+  const hedef = ROLE === "yonetici" ? (DB.dersAtamaTalepleri.some(r => r.durum === "beklemede") ? "dersonay" : "telafi") : "telafi";
+  return `<header class="sticky top-0 z-30 bg-card/80 backdrop-blur-md border-b border-line pt-safe"><div class="h-16 flex items-center justify-between px-4 sm:px-6">
+    <div class="flex items-center gap-4 min-w-0">
+      <button onclick="mobilMenuAc()" class="lg:hidden text-mut hover:text-neutral-100" aria-label="Menü">${ikon("menu","w-5 h-5")}</button>
+      <div class="min-w-0"><h2 class="font-display text-lg font-semibold truncate">Hoşgeldiniz</h2><p class="text-xs text-mut truncate">${esc(USER.ad)}</p></div>
+    </div>
+    <div class="flex items-center gap-2">
+      ${bildirim ? `<button onclick="setTab('${hedef}')" class="relative h-10 w-10 inline-flex items-center justify-center rounded-lg text-mut hover:text-gold hover:bg-accent" title="Bekleyen talepler">${ikon("bell")}<span class="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-gold text-black text-[10px] font-bold flex items-center justify-center">${bildirim}</span></button>` : ""}
+      <button onclick="cikisYap()" class="inline-flex items-center gap-2 h-9 rounded-md px-3 text-sm text-mut hover:text-red-400 hover:bg-accent">${ikon("logout")} <span class="hidden sm:inline">Çıkış</span></button>
+    </div>
+  </div></header>`;
+}
+function icerikHtml() {
+  const tab = TABS[ROLE];
+  if (ROLE === "yonetici") {
+    const map = { ozet:adminOverviewHtml, ogrenciler:() => ogrenciListesiHtml("yonetici"), ogretmenler:teachersHtml, takvim:adminCalendarHtml, devam:adminAttendanceHtml, telafi:telafiHtml, dersonay:adminLessonApprovalsHtml, finans:financeHtml, kart:kartlarHtml, eslestirme:adminAIMatchHtml, risk:adminAIRiskHtml };
+    return (map[tab] || adminOverviewHtml)();
+  }
+  if (ROLE === "sekreter") {
+    const map = { yeni:secNewStudentHtml, ogrenciler:() => ogrenciListesiHtml("sekreter"), yoklama:secAttendanceViewHtml, dersatama:secLessonAssignHtml, telafi:telafiHtml, finans:secFinanceRemindersHtml, kart:kartlarHtml };
+    return (map[tab] || secNewStudentHtml)();
+  }
+  if (ROLE === "ogretmen") {
+    const t = benimOgretmen(); if (!t) return card(bos("Öğretmen kaydınız bulunamadı."));
+    const ogr = DB.students.filter(s => s.teacherId === t.id);
+    if (tab === "gelisim") return teacherWeeklyHtml(ogr);
+    if (tab === "telafi") return teacherMakeupHtml(ogr, t.id);
+    if (tab === "ogrencilerim") return teacherStudentsHtml(ogr);
+    return teacherAttendanceHtml(ogr);
+  }
+  if (ROLE === "kasa") return kasaHtml();
+  if (ROLE === "veli") return veliPanelHtml();
+  return "";
+}
+/* Telefonda alt sekme çubuğu: en sık kullanılan 4 sayfa + "Menü" */
+function altMenuHtml() {
+  const ogeler = menuTanimi().flatMap(g => g.ogeler);
+  if (ogeler.length <= 1) return "";
+  const gorunen = ogeler.length <= 5 ? ogeler : ogeler.slice(0, 4);
+  const aktifGorunur = gorunen.some(o => o[0] === TABS[ROLE]);
+  const btn = (id, ad, ik, n, aktif, tik) => `<button onclick="${tik}" class="flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-0 ${aktif ? "text-gold" : "text-mut"}">
+      <span class="relative">${ikon(ik, "w-5 h-5")}${n ? `<span class="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-gold text-black text-[10px] font-bold flex items-center justify-center">${n}</span>` : ""}</span>
+      <span class="text-[10px] leading-tight pt-0.5 truncate max-w-full px-1">${esc(ad)}</span></button>`;
+  return `<nav id="altMenu" class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-card/95 backdrop-blur-md border-t border-line pb-safe">
+    <div class="flex">${gorunen.map(([id, ad, ik, n]) => btn(id, ad.split(" ")[0] === "AI" ? ad : ad.replace(/ &.*| Kasası| Notları/, ""), ik, n, TABS[ROLE] === id, `setTab('${id}')`)).join("")}
+    ${ogeler.length > 5 ? btn("", "Menü", "menu", 0, !aktifGorunur, "mobilMenuAc()") : ""}</div>
+  </nav>`;
+}
+function toastHtml() {
+  if (!TOAST) return "";
+  setTimeout(() => { if (TOAST) TOAST.yeni = false; }, 0);
+  const renk = TOAST.tur === "hata" ? "border-red-500/40 text-red-300" : TOAST.tur === "uyari" ? "border-yellow-500/40 text-yellow-300" : "border-green-500/40 text-green-300";
+  return `<div style="bottom:calc(${USER ? "84px" : "16px"} + env(safe-area-inset-bottom))" class="fixed lg:!bottom-4 right-4 left-4 sm:left-auto z-[200] max-w-sm bg-card border ${renk} rounded-xl px-4 py-3 text-sm shadow-2xl ${TOAST.yeni ? "fade-in" : ""} flex items-start gap-3" id="toast">
+    ${ikon(TOAST.tur === "hata" ? "alert" : "check","w-4 h-4 mt-0.5")}<span class="flex-1">${esc(TOAST.mesaj)}</span><button onclick="TOAST=null; render()" class="text-mut hover:text-neutral-100">${ikon("x","w-3.5 h-3.5")}</button></div>`;
+}
+function dashboardHtml() {
+  return `${sidebarHtml()}
+  <div class="lg:ml-64 min-h-screen">
+    ${topBarHtml()}
+    <main class="p-4 sm:p-6 max-w-[1400px] alt-bosluk lg:!pb-6">${icerikHtml()}</main>
+  </div>
+  ${altMenuHtml()}
+  ${MODALLAR.map((m, i) => modalHtml(m, 60 + i * 10)).join("")}`;
+}
+
+/* ================================================================== */
+/* Render — form değerleri ve odak korunur                              */
+/* ================================================================== */
+function render() {
+  const app = document.getElementById("app");
+  const eski = {};
+  if (!FORM_TEMIZLE) app.querySelectorAll("input[id], select[id], textarea[id]").forEach(el => { if (el.type !== "range") eski[el.id] = el.value; });
+  FORM_TEMIZLE = false;
+  const odak = document.activeElement && document.activeElement.id; let secim = null;
+  try { if (odak) secim = [document.activeElement.selectionStart, document.activeElement.selectionEnd]; } catch (e) {}
+  const kaydirmalar = [...app.querySelectorAll(".overflow-y-auto")].map(el => el.scrollTop);
+
+  app.innerHTML = (NATIVE && !API_BASE) ? sunucuAyarHtml()
+    : (NATIVE && SUNUCU_HATA === "baglanti") ? sunucuHataHtml()
+    : (!USER || !DB) ? loginScreenHtml() : dashboardHtml();
+  app.insertAdjacentHTML("beforeend", toastHtml());
+  MODAL_ANIM = false;
+
+  Object.entries(eski).forEach(([id, v]) => {
+    const el = document.getElementById(id); if (!el || id.startsWith("ara_") || id === "girisKimlik" || id === "girisSifre") return;
+    if (el.tagName === "SELECT") { if ([...el.options].some(o => o.value === v)) el.value = v; }
+    else el.value = v;
+  });
+  [...app.querySelectorAll(".overflow-y-auto")].forEach((el, i) => { if (kaydirmalar[i]) el.scrollTop = kaydirmalar[i]; });
+  if (odak) { const el = document.getElementById(odak); if (el && el.tagName !== "SELECT") { el.focus(); try { if (secim && secim[0] !== null) el.setSelectionRange(secim[0], secim[1]); } catch (e) {} } }
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && MODALLAR.length) modalKapat(); });
+window.addEventListener("focus", () => { if (USER) sunucudanYenile(); });
+
+render();
+initDb();
+uygulamaKurulum();
+</script>
+</body>
+</html>

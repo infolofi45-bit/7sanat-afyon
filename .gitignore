@@ -1,0 +1,6 @@
+.env
+node_modules/
+data/
+mobil/node_modules/
+mobil/www/
+mobil/scripts/tailwind-girdi.css

@@ -1,0 +1,30 @@
+{
+  "appId": "com.yedisanat.afyon",
+  "appName": "7Sanat Afyon",
+  "webDir": "www",
+  "backgroundColor": "#0a0a0a",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#0a0a0a"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0a0a0a"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#0a0a0a",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f131a",
+      "overlaysWebView": false
+    }
+  }
+}
