@@ -22,10 +22,18 @@ Tarayıcıda: http://localhost:3000
 ## Giriş hesapları (demo)
 | Rol | Giriş | Şifre |
 |---|---|---|
-| Yönetici | admin@7sanat.com | admin123 |
-| Sekreter | sekreter@7sanat.com | sekreter123 |
-| Öğretmen | ayse@7sanat.com (diğerleri: ad@7sanat.com) | ogretmen123 |
-| Kasa | kasa@7sanat.com | kasa123 |
+| Yönetici | admin@7sanat.com.tr | admin123 |
+| Sekreter | sekreter@7sanat.com.tr | sekreter123 |
+| Öğretmen | ayse@7sanat.com.tr (diğerleri: ad@7sanat.com.tr) | ogretmen123 |
+| Kasa | kasa@7sanat.com.tr | kasa123 |
 | Veli | Veli telefon numarası | Kayıtta üretilen 6 haneli şifre |
+| Öğrenci | isimsoyisim@7sanat.com.tr (aynı isimde 2., 3. kişi: isimsoyisim2, isimsoyisim3) | İlk şifre: TC'nin ilk 6 hanesi — ilk girişte değiştirilir |
 
-Canlıya almadan önce: `index.html` içinde `DEMO_MODU = false` yapın (giriş ekranındaki demo kısayolları gizlenir) ve demo şifreleri değiştirin.
+Demo verisinde öğrencilerin ilk şifresi `123456`'dır. Giriş ekranındaki "Öğrenci" düğmesi şifresi önceden belirlenmiş bir demo öğrenciyi doldurur.
+
+## Ders kayıtları ve materyaller
+- Öğretmen, Yoklama & Ders sayfasında öğrenciye (grup derslerinde gruba) dokunarak tek pencerede şunları girer: yoklama (geldi / gelmedi / mazeretli + telafi talebi), gelişim puanı, değerlendirme, müfredat konuları, işlenenler, ödev ve materyaller.
+- Materyaller `data/dosyalar/` klasörüne kaydedilir. Her format kabul edilir, dosya başına üst sınır 25 MB'dır.
+- Piyano müfredatı MEB Talim ve Terbiye Kurulu "Piyano Kursu Programı"ndan (18.09.2015, Sayı 86) aktarılmıştır: 8 seviye, seviye başına 33 hafta. Yönetici → Müfredat sayfasından düzenlenebilir; diğer branşlar için de buradan müfredat oluşturulur.
+
+Canlıya almadan önce: `index.html` içinde `DEMO_MODU = false` yapın (giriş ekranındaki demo kısayolları ve demo ders kayıtları gizlenir) ve demo şifreleri değiştirin.

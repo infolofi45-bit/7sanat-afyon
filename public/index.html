@@ -144,7 +144,7 @@ function sifreUret() { return String(Math.floor(100000 + Math.random() * 900000)
 /* ================================================================== */
 function seedDb() {
   const ogretmenTanimlari = [
-    { id:"p1", ad:"Ayşe Yılmaz", brans:"Piyano", tecrube:8, email:"ayse@7sanat.com" },
+    { id:"p1", ad:"Ayşe Yılmaz", brans:"Piyano", tecrube:8, email:"ayse@7sanat.com.tr" },
     { id:"p2", ad:"Sena Korkmaz", brans:"Piyano", tecrube:5 },
     { id:"p3", ad:"Burak Aydın", brans:"Piyano", tecrube:11 },
     { id:"p4", ad:"Gül Tekin", brans:"Piyano", tecrube:6 },
@@ -173,7 +173,7 @@ function seedDb() {
     uzmanlik:BRANS_BILGI[t.brans].uzmanlik, tarz:BRANS_BILGI[t.brans].tarz, yasAraligi:BRANS_BILGI[t.brans].yasAraligi,
     tecrube:t.tecrube,
     tel:`0532 ${400 + i} ${pad2(10 + i)} ${pad2(30 + i)}`,
-    email:t.email || `${slug(t.ad.split(" ")[0])}@7sanat.com`,
+    email:t.email || `${slug(t.ad.split(" ")[0])}@7sanat.com.tr`,
     sifre:"ogretmen123",
     baslangic:`20${pad2(18 + (i % 7))}-09-01`,
     not_:"",
@@ -318,9 +318,9 @@ function seedDb() {
     { id:"d1", studentId: students.find(s=>!s.teacherId && s.brans==="Keman").id, teacherId:"k1", tarih:"2026-10-05 16:00", not_:"Veli ile görüşüldü, bu saat uygun.", durum:"beklemede" },
   ];
   const personel = [
-    { email:"admin@7sanat.com", sifre:"admin123", rol:"yonetici", ad:"Serkan Bulut", unvan:"Kurum Müdürü" },
-    { email:"sekreter@7sanat.com", sifre:"sekreter123", rol:"sekreter", ad:"Buse Yıldırım", unvan:"Sekreter" },
-    { email:"kasa@7sanat.com", sifre:"kasa123", rol:"kasa", ad:"Kafe Kasası", unvan:"Kasa (POS)" },
+    { email:"admin@7sanat.com.tr", sifre:"admin123", rol:"yonetici", ad:"Serkan Bulut", unvan:"Kurum Müdürü" },
+    { email:"sekreter@7sanat.com.tr", sifre:"sekreter123", rol:"sekreter", ad:"Buse Yıldırım", unvan:"Sekreter" },
+    { email:"kasa@7sanat.com.tr", sifre:"kasa123", rol:"kasa", ad:"Kafe Kasası", unvan:"Kasa (POS)" },
   ];
   return { teachers, students, makeupRequests, dersAtamaTalepleri, kartlar, kartHareketleri, personel, surumVeri: 2 };
 }
@@ -352,7 +352,9 @@ function odemeOzeti(s) {
 }
 function devamOrani(list) {
   if (!list || list.length === 0) return null;
-  return Math.round((list.filter((d) => d[1] === "var").length / list.length) * 100);
+  const sayilan = list.filter((d) => d[1] !== "mazeretli");
+  if (!sayilan.length) return null;
+  return Math.round((sayilan.filter((d) => d[1] === "var").length / sayilan.length) * 100);
 }
 function yasGrubu(yas) { if (yas <= 6) return "5-6"; if (yas <= 10) return "7-10"; if (yas <= 14) return "11-14"; return "15-18"; }
 function kartBul(no) { return DB.kartlar.find(k => k.no === no); }
@@ -503,7 +505,8 @@ let SURUM = 0;
 let USER = null;          // { rol, ad, unvan, teacherId?, veliTel? }
 let ROLE = null;
 let LOGIN_EMAIL = "", LOGIN_SIFRE = "", LOGIN_HATA = "", SIFRE_GOSTER = false;
-let TABS = { yonetici:"ozet", ogretmen:"yoklama", sekreter:"yeni", kasa:"satis", veli:"ozet" };
+const VARSAYILAN_TABS = { yonetici:"ozet", ogretmen:"yoklama", sekreter:"yeni", kasa:"satis", veli:"ozet", ogrenci:"buhafta" };
+let TABS = { ...VARSAYILAN_TABS };
 let AI = { risk: {}, matchSecili: null, matchDurum: { loading:false, error:"", data:null } };
 let MODALLAR = [];        // üst üste açılabilen pencereler
 let MOBIL_MENU_ACIK = false;
@@ -536,14 +539,15 @@ async function initDb() {
       if (r.ok) {
         const j = await r.json();
         SUNUCU = true; SURUM = j.surum || 0;
-        if (j.db && j.db.surumVeri === 2) DB = j.db;
+        if (j.db && j.db.surumVeri >= 2) DB = j.db;
       }
     } catch (e) { SUNUCU = false; }
   }
   // Uygulamada veriler her zaman sunucudan gelir; bağlantı yoksa hata ekranı gösterilir
   if (NATIVE && !SUNUCU) { SUNUCU_HATA = "baglanti"; render(); return; }
-  if (!DB && !SUNUCU) { const yerel = lsGet(LS_DB); if (yerel) { try { const d = JSON.parse(yerel); if (d.surumVeri === 2) DB = d; } catch (e) {} } }
-  if (!DB) { DB = seedDb(); await saveDb(); }
+  if (!DB && !SUNUCU) { const yerel = lsGet(LS_DB); if (yerel) { try { const d = JSON.parse(yerel); if (d.surumVeri >= 2) DB = d; } catch (e) {} } }
+  if (!DB) { DB = seedDb(); goc3(DB); await saveDb(); }
+  else if (goc3(DB)) await saveDb();
   oturumYukle();
   render();
 }
@@ -552,7 +556,7 @@ async function sunucuyaYaz() {
   try {
     const r = await fetch(api("/api/db"), { method:"PUT", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ db: DB, surum: SURUM }) });
     if (r.status === 409) {
-      const j = await r.json(); DB = j.db; SURUM = j.surum;
+      const j = await r.json(); DB = j.db; SURUM = j.surum; goc3(DB);
       toast("Başka bir kullanıcı veriyi güncellemişti; güncel veri yüklendi. Son işleminizi tekrar kontrol edin.", "uyari");
       render();
     } else if (r.ok) { SURUM = (await r.json()).surum; }
@@ -578,7 +582,7 @@ async function sunucudanYenile() {
   try {
     const r = await fetch(api("/api/db"), { cache: "no-store" });
     const j = await r.json();
-    if (j.surum !== SURUM && j.db) { DB = j.db; SURUM = j.surum; render(); }
+    if (j.surum !== SURUM && j.db) { DB = j.db; SURUM = j.surum; goc3(DB); render(); }
   } catch (e) {}
 }
 async function arsivle(kayit) {
@@ -599,6 +603,7 @@ function toast(mesaj, tur) {
 /* ================================================================== */
 function oturumAc(u) {
   USER = u; ROLE = u.rol; MODALLAR = []; TOAST = null;
+  TABS[u.rol] = VARSAYILAN_TABS[u.rol];
   try { oturumDepo().setItem(SS_OTURUM, JSON.stringify(u)); } catch (e) {}
 }
 function oturumYukle() {
@@ -606,6 +611,7 @@ function oturumYukle() {
     const u = JSON.parse(oturumDepo().getItem(SS_OTURUM) || "null");
     if (!u) return;
     if (u.rol === "ogretmen" && !DB.teachers.find(t => t.id === u.teacherId)) return;
+    if (u.rol === "ogrenci" && !DB.students.some(s => s.id === u.studentId)) return;
     if (u.rol === "veli" && !DB.students.some(s => telEsit(s.veli && s.veli.tel, u.veliTel))) return;
     USER = u; ROLE = u.rol;
   } catch (e) {}
@@ -619,6 +625,11 @@ function girisYap() {
   if (p) { oturumAc({ rol:p.rol, ad:p.ad, unvan:p.unvan }); render(); return; }
   const t = DB.teachers.find(x => (x.email||"").toLowerCase() === kimlik && x.sifre === sifre);
   if (t) { oturumAc({ rol:"ogretmen", ad:t.ad, unvan:`${t.brans} Öğretmeni`, teacherId:t.id }); render(); return; }
+  const og = kimlik.includes("@") && DB.students.find(x => x.hesap && x.hesap.email === kimlik);
+  if (og && og.hesap.sifreOzet === sifreOzet(sifre)) {
+    if (!og.hesap.ilkSifre) { og.hesap.sonGiris = simdi(); saveDb(); }
+    oturumAc({ rol:"ogrenci", ad:og.ad, unvan:`${og.brans} Öğrencisi`, studentId:og.id, sifreDegistir: !!og.hesap.ilkSifre }); render(); return;
+  }
   if (sadeceRakam(kimlik).length >= 10) {
     const cocuk = DB.students.filter(s => s.veli && telEsit(s.veli.tel, kimlik));
     if (cocuk.length && cocuk.some(s => s.veli.sifre === sifre)) {
@@ -633,7 +644,7 @@ function sifirlaVeriler() {
   modalAc({ tip:"onay", baslik:"Demo verileri sıfırlansın mı?", mesaj:"Tüm kayıtlar demo başlangıç verisine döner. Bu işlem geri alınamaz.", buton:"Evet, sıfırla", aksiyon:"sifirlaOnayli()" });
 }
 async function sifirlaOnayli() {
-  DB = seedDb(); HATIRLATILDI = new Set(); AI = { risk:{}, matchSecili:null, matchDurum:{ loading:false, error:"", data:null } };
+  DB = seedDb(); goc3(DB); HATIRLATILDI = new Set(); AI = { risk:{}, matchSecili:null, matchDurum:{ loading:false, error:"", data:null } };
   MODALLAR = []; TAKVIM_OGRETMEN = null; KASA_KART = null; KASA_SEPET = [];
   await saveDb(); cikisYap();
 }
@@ -657,6 +668,7 @@ function durumSet(k, v) {
   else if (k === "YOKLAMA_TARIH") { YOKLAMA_TARIH = v; YOKLAMA_TEMP = {}; }
   else if (k === "GELISIM_OGRENCI") GELISIM_OGRENCI = v; else if (k === "GELISIM_HAFTA") GELISIM_HAFTA = v;
   else if (k === "TAKVIM_OGRETMEN") TAKVIM_OGRETMEN = v;
+  else if (k === "MAT_FILTRE") MAT_FILTRE = v; else if (k === "MUF_BRANS") MUF_BRANS = v;
   render();
 }
 function val(id) { const el = document.getElementById(id); return el ? el.value : ""; }
@@ -713,10 +725,13 @@ async function kayitSil(sid) {
     kartHareketleri: kart ? kartHareketleri(kart.no) : [],
     telafiTalepleri: DB.makeupRequests.filter(r => r.studentId === sid),
     dersAtamaTalepleri: DB.dersAtamaTalepleri.filter(r => r.studentId === sid),
+    dersKayitlari: ogrenciKayitlari(sid),
   });
   DB.students = DB.students.filter(x => x.id !== sid);
   if (kart) { DB.kartlar = DB.kartlar.filter(k => k.no !== kart.no); DB.kartHareketleri = DB.kartHareketleri.filter(h => h.kartNo !== kart.no); }
   DB.makeupRequests = DB.makeupRequests.filter(r => r.studentId !== sid);
+  (DB.dersKayitlari || []).forEach(k => { delete k.ogrenciler[sid]; });
+  DB.dersKayitlari = (DB.dersKayitlari || []).filter(k => Object.keys(k.ogrenciler).length);
   DB.dersAtamaTalepleri = DB.dersAtamaTalepleri.filter(r => r.studentId !== sid);
   delete AI.risk[sid];
   MODALLAR = [];
@@ -895,7 +910,7 @@ function disaAktarMaliTablo() {
     + xlsTablo("Tahsilat Kayıtları", ["Tarih","Öğrenci","Tutar","Yöntem","Tahsil Eden","Not"], tahsilat));
 }
 function disaAktarYoklama() {
-  xlsIndir("yoklama_kayitlari", xlsTablo("", ["Öğrenci","Branş","Tarih","Durum"], DB.students.flatMap((s)=>s.devam.map((d)=>[s.ad, s.brans, tarihTR(d[0]), d[1] === "var" ? "Geldi" : "Gelmedi"]))));
+  xlsIndir("yoklama_kayitlari", xlsTablo("", ["Öğrenci","Branş","Tarih","Durum"], DB.students.flatMap((s)=>s.devam.map((d)=>[s.ad, s.brans, tarihTR(d[0]), (DEVAM_DURUM[d[1]] || DEVAM_DURUM.yok)[0]]))));
 }
 function disaAktarKartlar() {
   xlsIndir("kafe_kartlari", xlsTablo("Kartlar", ["Kart No","Tip","Öğrenci","Veli","Bakiye","Durum"], DB.kartlar.map(k => { const s = ogrenci(k.studentId); return [kartNoGoster(k.no), KART_TIPLERI[k.tip].ad, s ? s.ad : "-", s ? s.veli.ad : "-", kartBakiye(k.no), k.aktif ? "Aktif" : "Donduruldu"]; }))
@@ -913,28 +928,10 @@ function disaAktarOgrenciDetay(sid) {
     + xlsTablo("Kart Hareketleri", ["Tarih","İşlem","Tutar","Açıklama","Kopya"], kart ? kartHareketleri(kart.no).map(h => [tarihTR(h.tarih), h.tur === "yukleme" ? "Yükleme" : "Harcama", h.tutar, h.aciklama, h.kopya || "-"]) : [])
     + xlsTablo("Veli Görüşme Notları", ["Soru","Cevap"], (s.veliSoruCevap||[]).map(qa => [qa[0], qa[1]]))
     + xlsTablo("Haftalık Gelişim Notları", ["Hafta","Not","Puan"], s.haftalikNotlar.map(n => [n[0], n[1], n[2]]))
-    + xlsTablo("Devam Kayıtları", ["Tarih","Durum"], s.devam.map(d => [tarihTR(d[0]), d[1] === "var" ? "Geldi" : "Gelmedi"])));
+    + xlsTablo("Devam Kayıtları", ["Tarih","Durum"], s.devam.map(d => [tarihTR(d[0]), (DEVAM_DURUM[d[1]] || DEVAM_DURUM.yok)[0]])));
 }
 
 /* ---------- Öğretmen işlemleri ---------- */
-function toggleYoklama(sid, d) { YOKLAMA_TEMP[sid] = d; render(); }
-function hepsiVar(ids) { ids.split(",").forEach(id => YOKLAMA_TEMP[id] = "var"); render(); }
-function kaydetYoklama() {
-  const ids = Object.keys(YOKLAMA_TEMP);
-  if (!ids.length) { toast("Önce öğrencileri işaretleyin.", "hata"); return; }
-  ids.forEach((sid) => {
-    const s = ogrenci(sid);
-    if (s) { s.devam = s.devam.filter(d => d[0] !== YOKLAMA_TARIH); s.devam.push([YOKLAMA_TARIH, YOKLAMA_TEMP[sid]]); s.devam.sort((a,b)=>a[0].localeCompare(b[0])); }
-  });
-  YOKLAMA_TEMP = {}; saveDb(); toast(`${tarihTR(YOKLAMA_TARIH)} yoklaması kaydedildi.`); render();
-}
-function kaydetGelisimNotu() {
-  const sid = GELISIM_OGRENCI, not_ = val("gelisimNot").trim(), puan = Number(val("gelisimPuan"));
-  if (!GELISIM_HAFTA || !not_) { toast("Lütfen hafta ve not alanlarını doldurun.", "hata"); return; }
-  const s = ogrenci(sid); const hafta = haftaEtiketi(GELISIM_HAFTA);
-  if (s) { s.haftalikNotlar = s.haftalikNotlar.filter(n => n[0] !== hafta); s.haftalikNotlar.push([hafta, not_, puan]); }
-  saveDb(); FORM_TEMIZLE = true; toast("Gelişim notu kaydedildi."); render();
-}
 function gonderTelafiTalebi(teacherId) {
   const sid = val("telafiOgrenci"), dersTarihi = datetimeGoster(val("telafiDersTarihi")), sebep = val("telafiSebep").trim(), onerilenTarih = datetimeGoster(val("telafiOnerilenTarih"));
   if (!sid || !dersTarihi || !sebep || !onerilenTarih) { toast("Lütfen tüm alanları doldurun.", "hata"); return; }
@@ -970,6 +967,11 @@ function kaydetYeniOgrenci() {
   if (!ad || !yas || !kayitTarihi || !kayitUcreti || !veliAd || !veliTel) { toast("Lütfen * işaretli tüm alanları doldurun.", "hata"); return; }
   if (sadeceRakam(veliTel).length < 10) { toast("Veli telefonu en az 10 haneli olmalı.", "hata"); return; }
   if (ilkOdeme > kayitUcreti) { toast("Peşinat kayıt ücretinden fazla olamaz.", "hata"); return; }
+  const tc = sadeceRakam(val("yeniTC"));
+  if (!tcGecerli(tc)) { toast("Öğrencinin geçerli TC kimlik numarasını girin.", "hata"); return; }
+  const ogrEmail = (val("yeniOgrEmail").trim() || ogrenciEpostaUret(ad)).toLowerCase();
+  if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(ogrEmail)) { toast("Öğrenci e-postası geçersiz.", "hata"); return; }
+  if (epostaKullaniliyor(ogrEmail)) { toast("Bu öğrenci e-postası zaten kullanılıyor.", "hata"); return; }
   const veliSoruCevap = VELI_SORULARI.map((soru, i) => [soru, val("veliCevap" + i).trim()]).filter((qa) => qa[1]);
   const tel = sadeceRakam(veliTel).replace(/^(?!0)/, "0");
   const kardes = DB.students.find(s => s.veli && telEsit(s.veli.tel, tel));
@@ -982,6 +984,8 @@ function kaydetYeniOgrenci() {
     ilgiAlani: veliSoruCevap[0] ? veliSoruCevap[0][1] : "", beklenti: veliSoruCevap.length ? veliSoruCevap[veliSoruCevap.length-1][1] : "",
     seviye: val("yeniSeviye") || "Başlangıç", veliSoruCevap, haftalikNotlar:[], devam:[],
     veli: { ad: veliAd, tel, email: veliEmail, sifre: veliSifre }, kartNo: no,
+    hesap: { email: ogrEmail, sifreOzet: sifreOzet(tc.slice(0, 6)), ilkSifre: true, sonGiris: null },
+    eserler: [], mufSeviye: brans === "Piyano" ? ({ "Başlangıç": 1, "Orta": 2, "İleri": 3 }[val("yeniSeviye")] || 1) : null,
   };
   DB.students.push(s);
   DB.kartlar.push({ no, tip: YENI_KART_TIP, studentId: s.id, olusturma: kayitTarihi, aktif: true });
@@ -1009,6 +1013,7 @@ async function analizEt(sid) {
 /* İkonlar ve ortak UI parçaları                                        */
 /* ================================================================== */
 const IKON = {
+  book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
   dashboard:'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
   users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   cap:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
@@ -1111,7 +1116,7 @@ function puanNoktalari(p) { return `<div class="flex items-center gap-1">${[1,2,
 function devamSeridi(devam) {
   if (!devam.length) return '<p class="text-xs text-mut">Henüz yoklama kaydı yok.</p>';
   const son = devam.slice(-20);
-  return `<div class="flex gap-1">${son.map(([t, d]) => `<div title="${tarihTR(t)}: ${d === "var" ? "Geldi" : "Gelmedi"}" class="h-3 flex-1 rounded-full ${d === "var" ? "bg-green-500" : "bg-red-500"}"></div>`).join("")}</div>
+  return `<div class="flex gap-1">${son.map(([t, d]) => `<div title="${tarihTR(t)}: ${(DEVAM_DURUM[d] || DEVAM_DURUM.yok)[0]}" class="h-3 flex-1 rounded-full ${d === "var" ? "bg-green-500" : d === "mazeretli" ? "bg-yellow-500" : "bg-red-500"}"></div>`).join("")}</div>
     <div class="flex justify-between text-xs text-mut mt-1"><span>${tarihTR(son[0][0])}</span><span>${tarihTR(son[son.length-1][0])}</span></div>`;
 }
 
@@ -1160,10 +1165,12 @@ function hareketListesi(no, limit) {
 function loginScreenHtml() {
   const ornekVeli = DB && DB.students[0];
   const demolar = [
-    ["Yönetici", "admin@7sanat.com", "admin123"], ["Sekreter", "sekreter@7sanat.com", "sekreter123"],
-    ["Öğretmen", "ayse@7sanat.com", "ogretmen123"], ["Kasa", "kasa@7sanat.com", "kasa123"],
+    ["Yönetici", "admin@7sanat.com.tr", "admin123"], ["Sekreter", "sekreter@7sanat.com.tr", "sekreter123"],
+    ["Öğretmen", "ayse@7sanat.com.tr", "ogretmen123"], ["Kasa", "kasa@7sanat.com.tr", "kasa123"],
   ];
   if (ornekVeli) demolar.push(["Veli", ornekVeli.veli.tel, ornekVeli.veli.sifre]);
+  const ornekOgr = DB && DB.students.find(x => x.hesap && !x.hesap.ilkSifre);
+  if (ornekOgr) demolar.push(["Öğrenci", ornekOgr.hesap.email, "123456"]);
   return `
   <div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 pt-safe">
     <div class="text-center mb-8">
@@ -1175,8 +1182,8 @@ function loginScreenHtml() {
     <form onsubmit="event.preventDefault(); girisYap(); return false;" class="w-full max-w-md bg-card border border-line rounded-xl p-6">
       <h2 class="font-display text-xl font-semibold text-neutral-50 mb-5">Giriş Yap</h2>
       ${lbl("E-posta veya Telefon")}
-      <input id="girisKimlik" value="${esc(LOGIN_EMAIL)}" oninput="LOGIN_EMAIL=this.value" placeholder="admin@7sanat.com veya 05xx xxx xx xx" autocomplete="username" class="${INP} py-2.5" />
-      <p class="text-xs text-mut mt-1.5 mb-4">Veliler telefon numarası ile giriş yapar.</p>
+      <input id="girisKimlik" value="${esc(LOGIN_EMAIL)}" oninput="LOGIN_EMAIL=this.value" placeholder="ad@7sanat.com.tr veya 05xx xxx xx xx" autocomplete="username" class="${INP} py-2.5" />
+      <p class="text-xs text-mut mt-1.5 mb-4">Veliler telefon numarası, öğrenciler okul e-postası ile giriş yapar.</p>
       ${lbl("Şifre")}
       <div class="relative">
         <input id="girisSifre" type="${SIFRE_GOSTER ? "text" : "password"}" value="${esc(LOGIN_SIFRE)}" oninput="LOGIN_SIFRE=this.value" placeholder="••••••••" autocomplete="current-password" class="${INP} py-2.5 pr-10" />
@@ -1232,6 +1239,10 @@ function adminOverviewHtml() {
         `<div class="flex items-center gap-3 min-w-0"><div class="w-2 h-2 rounded-full shrink-0" style="background:${bransRenk(s.brans)}"></div><span class="text-sm truncate">${esc(s.ad)}</span><span class="text-xs text-mut">(${esc(s.brans)})</span></div>`,
         `<div class="flex items-center gap-2 text-xs whitespace-nowrap">${dev >= 2 ? `<span class="text-orange-400">${dev} devamsızlık</span>` : ""}${o.geciken ? `<span class="text-red-400">${o.geciken} geciken taksit</span>` : ""}</div>`,
         `ogrenciAc('${s.id}')`)).join("") || bos("Risk altında öğrenci yok.")}</div>`)}
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    ${eksikKayitKarti()}
+    <div class="space-y-6">${mufIlerlemeRaporu()}</div>
   </div>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     ${card(`${cardBaslik("music", "Branş Dağılımı")}
@@ -1515,45 +1526,6 @@ function kartlarHtml() {
 /* Öğretmen paneli                                                      */
 /* ================================================================== */
 function benimOgretmen() { return DB.teachers.find(t => t.id === USER.teacherId); }
-function teacherAttendanceHtml(ogrenciler) {
-  const gun = gunAdi(YOKLAMA_TARIH);
-  const liste = ogrenciler.filter((s) => s.dersGunu === gun).sort((a, b) => (a.dersSaati || "").localeCompare(b.dersSaati || ""));
-  const rows = liste.map((s) => {
-    const mevcut = (s.devam.find(d => d[0] === YOKLAMA_TARIH) || [])[1];
-    const secim = YOKLAMA_TEMP[s.id] || mevcut;
-    return satir(`<div><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.dersSaati || "")}${mevcut ? " · kayıtlı: " + (mevcut === "var" ? "geldi" : "gelmedi") : ""}</p></div>`,
-      `<div class="flex gap-2">
-        <button onclick="toggleYoklama('${s.id}','var')" class="text-xs px-3 py-1.5 rounded-md border transition ${secim === "var" ? "bg-green-500/20 border-green-500/50 text-green-300" : "border-line text-mut hover:text-neutral-200"}">Geldi</button>
-        <button onclick="toggleYoklama('${s.id}','yok')" class="text-xs px-3 py-1.5 rounded-md border transition ${secim === "yok" ? "bg-red-500/20 border-red-500/50 text-red-300" : "border-line text-mut hover:text-neutral-200"}">Gelmedi</button>
-      </div>`);
-  }).join("");
-  return `${sayfaBaslik("Yoklama", "Al", "Seçilen günün ders programındaki öğrenciler listelenir")}
-  ${card(`
-    <div class="flex flex-wrap items-end gap-3 mb-2">
-      <div>${lbl("Ders Tarihi")}<input id="yoklamaTarihi" type="date" value="${YOKLAMA_TARIH}" onchange="durumSet('YOKLAMA_TARIH', this.value)" class="${INP} !w-auto" /></div>
-      ${liste.length ? `<button onclick="hepsiVar('${liste.map(s => s.id).join(",")}')" class="${BTN.s} mb-0.5">Hepsi geldi</button>` : ""}
-    </div>
-    <p class="text-xs text-mut mb-4">${esc(gun)} günü için planlı ${liste.length} öğrenci.</p>
-    ${liste.length ? `<div class="space-y-2">${rows}</div>` : bos("Bu tarihte planlı dersiniz bulunmuyor.")}
-    <button onclick="kaydetYoklama()" ${liste.length ? "" : "disabled"} class="${BTN.p} mt-4">Yoklamayı Kaydet</button>`, "max-w-2xl")}`;
-}
-function teacherWeeklyHtml(ogrenciler) {
-  if (!GELISIM_OGRENCI || !ogrenciler.find(s => s.id === GELISIM_OGRENCI)) GELISIM_OGRENCI = ogrenciler[0] ? ogrenciler[0].id : null;
-  const secili = ogrenci(GELISIM_OGRENCI);
-  if (!secili) return `${sayfaBaslik("Haftalık", "Gelişim")}${card(bos("Size atanmış öğrenci bulunmuyor."))}`;
-  const gecmis = [...secili.haftalikNotlar].reverse().map(n => `<div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(n[0])}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("");
-  return `${sayfaBaslik("Haftalık", "Gelişim", "Öğrencileriniz için haftalık değerlendirme notu")}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    ${card(`
-      ${lbl("Öğrenci")}<select onchange="durumSet('GELISIM_OGRENCI', this.value)" class="${INP} mb-4">${ogrenciler.map(s => `<option value="${s.id}" ${s.id === secili.id ? "selected" : ""}>${esc(s.ad)}</option>`).join("")}</select>
-      ${lbl("Hafta")}<input type="date" value="${GELISIM_HAFTA}" onchange="durumSet('GELISIM_HAFTA', this.value)" class="${INP} mb-1" />
-      <p class="text-xs text-mut mb-4">${GELISIM_HAFTA ? "Seçilen hafta: " + esc(haftaEtiketi(GELISIM_HAFTA)) : "Tarihi seçtiğinizde ilgili hafta otomatik hesaplanır."}</p>
-      ${lbl("Gelişim Notu")}<textarea id="gelisimNot" rows="3" placeholder="Bu hafta öğrencinin gelişimini kısaca değerlendirin..." class="${INP} mb-4"></textarea>
-      ${lbl("Gelişim Puanı")}<div class="flex items-center gap-3 mb-4"><input id="gelisimPuan" type="range" min="1" max="5" value="4" oninput="document.getElementById('puanGoster').textContent=this.value" class="w-full accent-[#fcc522]" /><span class="text-sm text-gold w-10"><span id="puanGoster">4</span>/5</span></div>
-      <button onclick="kaydetGelisimNotu()" class="${BTN.p}">Notu Kaydet</button>`)}
-    ${card(`${cardBaslik("trend", "Geçmiş Notlar")}<div class="space-y-2 max-h-96 overflow-y-auto">${gecmis || bos("Henüz not yok.")}</div>`)}
-  </div>`;
-}
 function teacherMakeupHtml(ogrenciler, teacherId) {
   const kendi = DB.makeupRequests.filter(r => r.ogretmenId === teacherId);
   const liste = kendi.map(r => { const s = ogrenci(r.studentId); return satir(`<div><p class="text-sm">${esc(s ? s.ad : "Öğrenci")}</p><p class="text-xs text-mut">${tarihTR(r.dersTarihi)} → ${tarihTR(r.onerilenTarih)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum)); }).join("");
@@ -1568,16 +1540,6 @@ function teacherMakeupHtml(ogrenciler, teacherId) {
     ${card(`${cardBaslik("repeat", "Gönderdiğim Talepler")}<div class="space-y-2">${liste || bos("Henüz talep göndermediniz.")}</div>`)}
   </div>`;
 }
-function teacherStudentsHtml(ogrenciler) {
-  return `${sayfaBaslik("Öğrencilerim", "", `${ogrenciler.length} öğrenci`)}
-  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${ogrenciler.map(s => { const oran = devamOrani(s.devam); const son = s.haftalikNotlar[s.haftalikNotlar.length - 1]; return card(`
-    <div class="flex items-center justify-between mb-2"><p class="font-medium">${esc(s.ad)}</p>${oran === null ? "" : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</div>
-    <p class="text-xs text-mut mb-3">${s.yas} yaş · ${esc(s.seviye)} · ${s.dersGunu ? esc(s.dersGunu + " " + s.dersSaati) : "ders saati yok"}</p>
-    ${devamSeridi(s.devam)}
-    ${son ? `<div class="mt-3 p-2 bg-bg rounded-lg"><div class="flex justify-between mb-1"><span class="text-xs text-mut">${esc(son[0])}</span>${puanNoktalari(son[2])}</div><p class="text-xs">${esc(son[1])}</p></div>` : ""}
-    <p class="text-xs text-mut mt-3">Veli: ${esc(s.veli.ad)} · ${telGoster(s.veli.tel)}</p>`); }).join("") || card(bos("Atanmış öğrenci yok."))}</div>`;
-}
-
 /* ================================================================== */
 /* Sekreter paneli                                                      */
 /* ================================================================== */
@@ -1588,7 +1550,7 @@ function secNewStudentHtml() {
     <div class="space-y-6">
       ${card(`${cardBaslik("user", "Öğrenci Bilgileri")}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="sm:col-span-2">${lbl("Ad Soyad", 1)}<input id="yeniAd" class="${INP}" /></div>
+          <div class="sm:col-span-2">${lbl("Ad Soyad", 1)}<input id="yeniAd" oninput="yeniOgrenciEpostaOner()" class="${INP}" /></div>
           <div>${lbl("Yaş", 1)}<input id="yeniYas" type="number" min="3" max="25" class="${INP}" /></div>
           <div>${lbl("Seviye")}<select id="yeniSeviye" class="${INP}"><option>Başlangıç</option><option>Orta</option><option>İleri</option></select></div>
           <div>${lbl("Branş", 1)}<select id="yeniBrans" onchange="yeniBransDegisti(this.value)" class="${INP}">${BRANSLAR().map(b => `<option ${b === varsBrans ? "selected" : ""}>${b}</option>`).join("")}</select></div>
@@ -1601,6 +1563,12 @@ function secNewStudentHtml() {
           <div class="sm:col-span-2">${lbl("Veli E-posta")}<input id="yeniVeliEmail" type="email" class="${INP}" /></div>
         </div>
         <p class="text-xs text-mut mt-3">Veli, bu telefon numarası ve kayıtta üretilecek 6 haneli şifre ile veli paneline girer. Kardeş kaydında aynı telefon girilirse mevcut şifre kullanılır.</p>`)}
+      ${card(`${cardBaslik("key", "Öğrenci Paneli Girişi")}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>${lbl("Öğrenci e-postası", 1)}<input id="yeniOgrEmail" oninput="this.dataset.elle=1" autocapitalize="off" placeholder="isimsoyisim@${EPOSTA_ALANI}" class="${INP} font-mono" /></div>
+          <div>${lbl("Öğrencinin TC kimlik no", 1)}<input id="yeniTC" inputmode="numeric" maxlength="11" placeholder="11 haneli" class="${INP} font-mono" /></div>
+        </div>
+        <p class="text-xs text-mut mt-3">E-posta isimden otomatik oluşur (aynı isimde ikinci öğrenci için sonuna 2, üçüncüsü için 3 eklenir). İlk şifre TC'nin ilk 6 hanesidir; öğrenci ilk girişte kendi şifresini belirler. TC numarası sistemde saklanmaz.</p>`)}
       ${card(`${cardBaslik("wallet", "Ücret ve Taksit")}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>${lbl("Kayıt Ücreti (₺)", 1)}<input id="yeniUcret" type="number" value="${BRANS_BILGI[varsBrans].ucret}" class="${INP}" /></div>
@@ -1626,7 +1594,7 @@ function secAttendanceViewHtml() {
   const kayitlar = DB.students.flatMap(s => s.devam.map(d => ({ s, tarih: d[0], durum: d[1] }))).sort((a, b) => b.tarih.localeCompare(a.tarih)).slice(0, 200);
   const rows = kayitlar.map(k => `<tr class="border-b border-line/60 hover:bg-accent/40 cursor-pointer" onclick="ogrenciAc('${k.s.id}','devam')">
     <td class="${TD} text-neutral-50">${esc(k.s.ad)}</td><td class="${TD}">${bransBadge(k.s.brans)}</td><td class="${TD} text-neutral-200">${tarihTR(k.tarih)}</td>
-    <td class="${TD}">${k.durum === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi")}</td></tr>`).join("");
+    <td class="${TD}">${devamBadge(k.durum)}</td></tr>`).join("");
   return `${sayfaBaslik("Yoklama", "Kayıtları", "Son 200 yoklama kaydı", `<button onclick="disaAktarYoklama()" class="${BTN.s}">${ikon("download","w-3.5 h-3.5")} Excel'e Aktar</button>`)}
   ${card(tablo(["Öğrenci","Branş","Tarih","Durum"], rows), "p-0 overflow-hidden")}`;
 }
@@ -1728,6 +1696,8 @@ function veliOzetHtml(s) {
   </div>
   ${o.geciken ? `<div class="mb-6 p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-300 flex items-center gap-3">${ikon("alert","w-5 h-5")} Vadesi geçmiş ${o.geciken} taksitiniz bulunuyor. Lütfen sekreterlik ile iletişime geçin.</div>` : ""}
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${(() => { const k = ogrenciKayitlari(s.id)[0]; return k ? `<div class="lg:col-span-2">${card(`${cardBaslik("clipboard", "Son Ders", `<button onclick="setTab('gelisim')" class="${BTN.g}">Tüm ders notları →</button>`)}${dersKaydiKarti(k, { sid: s.id }).replace('bg-card rounded-xl border border-line', 'rounded-xl')}`)}</div>` : ""; })()}
+    ${mufredat(s.brans) ? card(ilerlemeCubugu(s)) : ""}
     ${card(`${cardBaslik("trend", "Son Öğretmen Notu")}${son ? `<div class="p-3 bg-bg rounded-lg"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(son[0])}</span>${puanNoktalari(son[2])}</div><p class="text-sm">${esc(son[1])}</p></div>` : bos("Henüz not girilmedi.")}`)}
     ${card(`${cardBaslik("check", "Son Dersler")}${devamSeridi(s.devam)}`)}
   </div>`;
@@ -1747,12 +1717,19 @@ function veliDersHtml(s) {
       </div>
       ${telafi.length ? `<p class="text-sm mt-5 mb-2">Telafi Dersleri</p><div class="space-y-2">${telafi.map(r => satir(`<div><p class="text-sm">${tarihTR(r.onerilenTarih)}</p><p class="text-xs text-mut">Kaçırılan: ${tarihTR(r.dersTarihi)} · ${esc(r.sebep)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum))).join("")}</div>` : ""}`)}
     ${card(`${cardBaslik("check", "Yoklama Geçmişi", devamOrani(s.devam) === null ? "" : badge("gold", "%" + devamOrani(s.devam)))}
-      <div class="space-y-2 max-h-96 overflow-y-auto">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, d[1] === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi"))).join("") || bos("Henüz yoklama yok.")}</div>`)}
+      <div class="space-y-2 max-h-96 overflow-y-auto">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, devamBadge(d[1]))).join("") || bos("Henüz yoklama yok.")}</div>`)}
   </div>`;
 }
 function veliGelisimHtml(s) {
-  return `${sayfaBaslik("Gelişim", "Notları", "Öğretmenin haftalık değerlendirmeleri")}
-  ${card(`<div class="space-y-2">${[...s.haftalikNotlar].reverse().map(n => `<div class="p-4 bg-bg rounded-lg"><div class="flex items-center justify-between mb-2"><span class="text-xs text-mut">${esc(n[0])} · ${esc(ogretmenAd(s.teacherId) || "")}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("") || bos("Henüz gelişim notu girilmedi.")}</div>`, "max-w-3xl")}`;
+  const kayitlar = ogrenciKayitlari(s.id);
+  const etiketler = new Set(kayitlar.map(k => haftaEtiketi(k.tarih)));
+  const eski = [...s.haftalikNotlar].reverse().filter(n => !etiketler.has(n[0]));
+  return `${sayfaBaslik("Ders", "Notları", "Her dersin değerlendirmesi, işlenen konular, ödevler ve materyaller")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="xl:col-span-2 space-y-3">${kayitlar.map(k => dersKaydiKarti(k, { sid: s.id })).join("") || card(bos("Henüz ders kaydı yok."))}
+      ${eski.length ? `<p class="text-xs uppercase tracking-wider text-mut pt-3">Önceki değerlendirmeler</p>${eski.map(n => `<div class="p-4 bg-card border border-line rounded-xl"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(n[0])}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("")}` : ""}</div>
+    <div class="space-y-6">${card(ilerlemeCubugu(s))}${card(`${cardBaslik("music", "Çaldığı Eserler")}${eserListesi(s, false)}`)}</div>
+  </div>`;
 }
 function veliOdemeHtml(s) {
   const o = odemeOzeti(s);
@@ -1820,6 +1797,9 @@ function modalHtml(m, z) {
   if (m.tip === "ogretmenForm") return ogretmenFormModal(m, z);
   if (m.tip === "ogretmenDetay") return ogretmenDetayModal(m, z);
   if (m.tip === "kayitSonuc") return kayitSonucModal(m, z);
+  if (m.tip === "dersKaydi") return dersKaydiModal(m, z);
+  if (m.tip === "eserler") return eserModal(m, z);
+  if (m.tip === "ogrDersGecmis") return ogrDersGecmisModal(m, z);
   if (m.tip === "onay") return modalKabuk(`<div class="p-6">
       <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${m.tehlike ? "bg-red-500/15 text-red-400" : "bg-gold/15 text-gold"}">${ikon(m.tehlike ? "trash" : "alert","w-6 h-6")}</div>
       <h3 class="font-display text-xl font-semibold">${esc(m.baslik)}</h3><p class="text-sm text-mut mt-2">${esc(m.mesaj)}</p>
@@ -1831,7 +1811,7 @@ function modalHtml(m, z) {
 /* ---------- Öğrenci detayı (sekmeli) ---------- */
 const OGR_SEKMELER = [
   ["genel","Genel","user"], ["veli","Veli & Görüşme","phone"], ["ders","Ders & Öğretmen","calendar"], ["devam","Devam","check"],
-  ["gelisim","Gelişim","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"],
+  ["dersler","Dersler & Eserler","music"], ["gelisim","Gelişim","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"],
 ];
 function ogrenciModal(m, z) {
   const s = ogrenci(m.sid);
@@ -1839,7 +1819,7 @@ function ogrenciModal(m, z) {
   const o = odemeOzeti(s); const oran = devamOrani(s.devam); const t = DB.teachers.find(x => x.id === s.teacherId);
   const kart = s.kartNo && kartBul(s.kartNo);
   const sekme = m.sekme || "genel";
-  const govdeMap = { genel: ogrGenel, veli: ogrVeli, ders: ogrDers, devam: ogrDevam, gelisim: ogrGelisim, odeme: ogrOdeme, kart: ogrKart };
+  const govdeMap = { genel: ogrGenel, veli: ogrVeli, ders: ogrDers, devam: ogrDevam, dersler: ogrDersler, gelisim: ogrGelisim, odeme: ogrOdeme, kart: ogrKart };
   const ust = `<div class="p-5 border-b border-line">
     <div class="flex items-start justify-between gap-3">
       <div class="flex items-center gap-4 min-w-0">
@@ -1881,7 +1861,7 @@ function ogrGenel(s, m) {
       ${bilgi("Ad Soyad", esc(s.ad))}${bilgi("Yaş", s.yas)}${bilgi("Seviye", esc(s.seviye))}
       ${bilgi("Branş", bransBadge(s.brans))}${bilgi("Grup", esc(s.grup || (grupDersiMi(s.brans) ? "Atanmadı" : "Bireysel")))}${bilgi("Kayıt Tarihi", tarihTR(s.kayitTarihi))}
       ${bilgi("İlgi Alanı", esc(s.ilgiAlani || "-"))}${bilgi("Beklenti", esc(s.beklenti || "-"))}${bilgi("Veli", `${esc(s.veli.ad)}<br><span class="text-xs text-mut">${telGoster(s.veli.tel)}</span>`)}
-    </div>`;
+    </div>${ogrenciHesapKutusu(s)}`;
 }
 function ogrVeli(s) {
   const kardesler = DB.students.filter(x => x.id !== s.id && telEsit(x.veli.tel, s.veli.tel));
@@ -1927,7 +1907,7 @@ function ogrDevam(s) {
   const oran = devamOrani(s.devam); const gelmedi = s.devam.filter(d => d[1] === "yok").length;
   return `<div class="grid grid-cols-3 gap-3 mb-5">${bilgi("Devam Oranı", oran === null ? "-" : "%" + oran)}${bilgi("Katıldığı", s.devam.length - gelmedi)}${bilgi("Devamsızlık", gelmedi)}</div>
     <div class="mb-5">${devamSeridi(s.devam)}</div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, d[1] === "var" ? badge("success", "Geldi") : badge("danger", "Gelmedi"))).join("") || bos("Henüz yoklama kaydı yok.")}</div>`;
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, devamBadge(d[1]))).join("") || bos("Henüz yoklama kaydı yok.")}</div>`;
 }
 function ogrGelisim(s) {
   const r = AI.risk[s.id]; const toneMap = { iyi:"success", dikkat:"warning", riskli:"danger" };
@@ -2073,7 +2053,12 @@ function kayitSonucModal(m, z) {
           <p class="text-xs text-mut mt-1">Şifre: <span class="text-neutral-100 font-mono text-base tracking-widest">${esc(s.veli.sifre)}</span></p>
           ${m.kardes ? '<p class="text-xs text-mut mt-2">Bu veli daha önce kayıtlı; mevcut şifresi kullanıldı.</p>' : ""}
         </div>
-        <div class="p-4 rounded-lg bg-bg">
+        <div class="p-4 rounded-lg border border-line bg-bg">
+          <p class="text-sm font-medium flex items-center gap-2">${ikon("user")} Öğrenci Paneli Girişi</p>
+          <p class="text-xs text-mut mt-2">E-posta: <span class="text-neutral-100 font-mono">${esc(s.hesap ? s.hesap.email : "-")}</span></p>
+          <p class="text-xs text-mut mt-1">İlk şifre: TC kimlik no'nun ilk 6 hanesi</p>
+        </div>
+        <div class="p-4 rounded-lg bg-bg sm:col-span-2">
           <p class="text-sm font-medium">Sonraki adım</p>
           <p class="text-xs text-mut mt-2">Öğrenci “atama bekliyor” durumunda. Yönetici AI Eşleştirme’den öğretmen atayabilir ya da Ders Atama talebi gönderebilirsiniz.</p>
         </div>
@@ -2085,6 +2070,711 @@ function kayitSonucModal(m, z) {
     </div>`, "max-w-3xl", z);
 }
 
+/* Müfredat verisi: MEB Piyano Kursu Programı (PDF'ten aktarıldı) */
+const MEB_PIYANO_MUFREDAT = {"kaynak":"MEB Talim ve Terbiye Kurulu — Piyano Kursu Programı (18.09.2015, Sayı 86)","seviyeler":[{"no":1,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp1_1_1","ad":"Piyanonun Tanıtımı"},{"id":"mp1_1_2","ad":"Piyanonun Tarihsel Evrelerinin Anlatımı"},{"id":"mp1_1_3","ad":"Piyanoda Beyaz Tuşlarda Do-Re-Mi-Fa-Sol-La-Si Notaları"},{"id":"mp1_1_4","ad":"Sağ El ve Sol El Parmak Numaraları","detay":"Baş parmaklar 1 ve serçe parmaklar 5 olmak üzere 1-2-3-4-5. parmakların gösterilmesi"},{"id":"mp1_1_5","ad":"Kulak Çalışmaları","detay":"Piyanodan verilen tek sesin aynı frekansta vokal yolu ile öğrenciden alınabilmesine yönelik çalışmalar yapılacaktır"}]},{"no":2,"donem":1,"konular":[{"id":"mp1_2_1","ad":"Bir Önceki Haftada İşlenen Konuların Genel Tekrarı"},{"id":"mp1_2_2","ad":"Doğru Pozisyonda Oturuş","detay":"Ayakların çapraz olmadığı bir konumda otururken üst bedenin pelvis kemiği bölgesindeki iki oturma kemiğinin ya tam üstünde ya da biraz önünde dengelenmesi gerektiği konusunun anlatılarak ve uygulanması"},{"id":"mp1_2_3","ad":"Kolların Doğru Pozisyonu","detay":"Omuzların kendi doğal pozisyonunda düşük dirseklerin ne bedene yapışık ne çok uzak ve kollarımızın oturduğumuzda piyanoya paralel bir şekilde uzandığı bir pozisyonu arama çalışmalarının yapılması"},{"id":"mp1_2_4","ad":"Ellerin Doğru Pozisyonu","detay":"Bileklerin piyanoya paralel ve ayaların altının piyanoya değmediği elin içinde yuvarlak bir cisim tutulduğu bir pozisyonu arama çalışmalarının yapılması"},{"id":"mp1_2_5","ad":"Kulak Çalışmaları","detay":"Piyanodan verilen tek ve çift seslerin aynı frekansta vokal yol ile öğrenciden alınabilmesine yönelik çalışmaların yapılması. e"}]},{"no":3,"donem":1,"konular":[{"id":"mp1_3_1","ad":"2/4, 3/4 ve 4/lük Ölçüler","detay":"Önce tahtaya yazılarak ve öğrencinin defterine geçirmesini sağlamak suretiyle öğretilmesi ve öğrencinin el ile vurarak uygulanışını deneyim etmesini sağlamak"},{"id":"mp1_3_2","ad":"Farklı Değerlerde Notalar ile Sağ ve Sol El Çalışmaları"},{"id":"mp1_3_3","ad":"İki El Paralel Notalarla Çalma"},{"id":"mp1_3_4","ad":"Pozisyon Düzeltmeleri"}]},{"no":4,"donem":1,"konular":[{"id":"mp1_4_1","ad":"Bir İki Üç Dört Vuruşluk Sus İşaretleri (Müzikte belirli uzunluklarda susma)"},{"id":"mp1_4_2","ad":"Öğretmenin Öngördüğü Küçük Parçalar ile Melodik Çalışmalar"}]},{"no":5,"donem":1,"konular":[{"id":"mp1_5_1","ad":"Temel Müzik Terimleri ve Sembolleri","detay":"a. Moderato (Orta hızda olan tempo)\nb. Legato (Notaların birbirlerine bağlı olarak çalınması)\nc. Ritardando (Ritmin kademeli olarak yavaşlaması)\nd. Largo (Yavaşritim)\ne. Andante (Yürüme hızında)"}]},{"no":6,"donem":1,"konular":[{"id":"mp1_6_1","ad":"Legato Çalışmaları","detay":"Farklı ritimlerde legato çalışmalarının uygulanarak pekiştirilmesi"}]},{"no":7,"donem":1,"konular":[{"id":"mp1_7_1","ad":"Sağ El Ağırlıklı Melodik Çalışmalar","detay":"Öğretmenin öngördüğü küçük parçalar ile melodi ve eşlik partilerinin balans edilmesi çalışmalarının yapılması"}]},{"no":8,"donem":1,"konular":[{"id":"mp1_8_1","ad":"Sol El Ağırlıklı Melodik Çalışmalar","detay":"Öğretmenin öngördüğü küçük parçalar ile melodi ve eşlik partilerinin balans edilmesi çalışmalarına devam edilecektir"}]},{"no":9,"donem":1,"konular":[{"id":"mp1_9_1","ad":"Do Majör Gamı","detay":"Bir oktav içerisinde iki el ayrı olarak şekilli ritimler (noktalı sekizlik-onaltılık ve onaltılık noktalı sekizlik ritim) ile gam ve arpej çalışmaları yapıl a"}]},{"no":10,"donem":1,"konular":[{"id":"mp1_10_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_10_2","ad":"Farklı Nota Değerleri","detay":"a. Noktalı ikilik\nb. Noktalı dörtlük\nc. Noktalı Sekizlik Pratik edilmeleri için hazırlanmış ilgili parçalar ile pekiştirilmeleri"}]},{"no":11,"donem":1,"konular":[{"id":"mp1_11_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_11_2","ad":"Noktalı Değerlerde Suslar","detay":"a. Noktalı ikilik\nb. Noktalı dörtlük\nc. Noktalı sekizlik Pratik edilmeleri için hazırlanmış ilgili parçalar ile pekiştirilmeleri"}]},{"no":12,"donem":1,"konular":[{"id":"mp1_12_1","ad":"Genel Tekrar: Önceki iki haftanın konularının çalışılması"},{"id":"mp1_12_2","ad":"Fa Anahtarı","detay":"a. Fa anahtarında notaların yerlerinin öğretilmesi\nb. Fa anahtarında ilgili parçalar ile sol el çalışmaları"}]},{"no":13,"donem":1,"konular":[{"id":"mp1_13_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_13_2","ad":"Aralıklar","detay":"a. İkili üçlü dörtlü beşli altılı yedili ve oktav aralıkları\nb. Aralıklar ile ilgili küçük parçalar"}]},{"no":14,"donem":1,"konular":[{"id":"mp1_14_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_14_2","ad":"Do Majör Gamı ve Arpeji, Şekilli ritimler ile inici ve çıkıcı olarak çalışılması"},{"id":"mp1_14_3","ad":"Do Majör Tonunda Küçük Parçalar"}]},{"no":15,"donem":1,"konular":[{"id":"mp1_15_1","ad":"1 Deşifre (Notayı ilk görüldüğü anda çalmaya çalışmak)"},{"id":"mp1_15_2","ad":"Do majör tonunda ilgili parçaların deşifre edilmesi çalışmaları"},{"id":"mp1_15_3","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":16,"donem":1,"konular":[{"id":"mp1_16_1","ad":"CZERNY Piyano Metodu Opus 599 j"},{"id":"mp1_16_2","ad":"Triole (Üçleme- 1 vuruşun içine eşit olarak dağılan 3”lü nota grubu) 7 ğ","detay":"Troleritminin teorik ve pratik olarak ilgili parçalar ile pekiştirilmesi"}]},{"no":17,"donem":1,"konular":[{"id":"mp1_17_1","ad":"Temel Müzik Terimleri","detay":"a. Tenuto (Nota süresini tam değerinde tutarak çalmak)\nb. Staccato (Kısa ve zıplatarak çalmak) Farklı notalar üzerinde görsel olarak incelenmesi do majör gamı ve arpejinde uygulanması"},{"id":"mp1_17_2","ad":"Temel Nüans İşaretleri (Sesin yükseklik derecesini belirleyen işaretler)","detay":"a, P — Piano (Hafif ve yumuşak tonda)\nb. PP — Pianissimo (Çok hafif ve yumuşak tonda)\nc. Mp — Mezzo piano (Orta hafiflikte)\nd. Mf— Mezzo forte (Orta kuvvette)\ne. F— Forte (Kuvvetli) f£. FF — Fortessimo (Çok kuvvetli)\ng. Crescendo — (Sesin kademeli olarak hafiften kuvvetliye doğru yükselmesi)\nh. Decrescendo — (Sesin kademeli olarak kuvvetliden hafife doğru yükselmesi) e Nüansların sözlü ve yazılı olarak öğretilmesi ve piyanoda uygulama çalışmalarının yapılması"}]},{"no":18,"donem":1,"konular":[{"id":"mp1_18_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_18_2","ad":"Sol Majör Gamı","detay":"Şekilli ritimler ile iki el ayrı olarak iki oktav çalışılması ve ilgili parçalar ile re majör tonunun pekiştirilmesi"}]},{"no":19,"donem":1,"konular":[{"id":"mp1_19_1","ad":"Temel Müzik Terimleri","detay":"a. Çarpma İşareti (İki notadan oluşan bir süsleme biçimi)\nb. Tremolo İşareti (Bir ya da birkaç notanın birbiri ardı sıra çok hızlı bir biçimde tekrarlanması) Çarpma ve tremolonun do majör tonu içerisinde uygulamalarının yapılması"},{"id":"mp1_19_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":20,"donem":1,"konular":[{"id":"mp1_20_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_20_2","ad":"Sol Majör Gamı ve Arpeji","detay":"Ayrı eller ile iki oktav olarak şekilli ritim çalışmalarının yapılması ve sol majör tonunda ilgili parçalar ile pekiştirilmeleri m i"}]},{"no":21,"donem":2,"konular":[{"id":"mp1_21_1","ad":"Etüt Çalışmaları","detay":"Do majör sol majör ve sol majör tonlarında"},{"id":"mp1_21_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":22,"donem":2,"konular":[{"id":"mp1_22_1","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":23,"donem":2,"konular":[{"id":"mp1_23_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp1_23_2","ad":"Etüt Çalışmaları","detay":"Do majör ve sol majör tonlarında"}]},{"no":24,"donem":2,"konular":[{"id":"mp1_24_1","ad":"Farklı Değerde Notalar","detay":"Sekizlik nota Gam arpej ve ilgili parçalarda uygulama çalışmalarının yapılması"},{"id":"mp1_24_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":25,"donem":2,"konular":[{"id":"mp1_25_1","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":26,"donem":2,"konular":[{"id":"mp1_26_1","ad":"Farklı Değerde Notalar","detay":"Onaltılık nota Gam arpej ve ilgili parçalarda uygulama çalışmalarının yapılması"}]},{"no":27,"donem":2,"konular":[{"id":"mp1_27_1","ad":"Sekizlik ve Onaltılık Notalar Üzerinde Pekiştirici Çalışmalar"},{"id":"mp1_27_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":28,"donem":2,"konular":[{"id":"mp1_28_1","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":29,"donem":2,"konular":[{"id":"mp1_29_1","ad":"Deşifre Çalışmaları","detay":"Do majör ve sol majör tonlarında ilgili etütlerin deşifre ve teknik çalışmalarının yapılması"}]},{"no":30,"donem":2,"konular":[{"id":"mp1_30_1","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":31,"donem":2,"konular":[{"id":"mp1_31_1","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":32,"donem":2,"konular":[{"id":"mp1_32_1","ad":"Sınav Repertuvarı Çalışmaları"}]},{"no":33,"donem":2,"konular":[{"id":"mp1_33_1","ad":"Sınav"}]},{"no":34,"donem":2,"konular":[{"id":"mp1_34_1","ad":"Sınav Değerlendirmesi","detay":"a. Kursiyerin genel pozisyonu (Oturuş kol ve el duruşu) hakkında değerlendirme\nb. Sınav için seçilmiş gam ve arpejlerin ritim teknik ve parmak n Sağ Ri açılarından doğru şekilde çalınıp çalınmadığını değerlendirme 7 eli\nc. Czerny opus 599 piyano metodundan sınav için seçilmiş etütlerin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme"}]}],"ozet":"Piyanonun tanıtımı, pozisyon, kulak çalışmaları, ölçü bilgisi, temel terimler, Czerny op. 599"},{"no":2,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp2_1_1","ad":"Segmentel Çalışma Teknikleri","detay":"İki notanın ilkini uzun tutup ikincisini kısa kesme ve giderek ilk notanın kısaltılarak ikinci notaya yaklaştırılması çalışmaları"},{"id":"mp2_1_2","ad":"Re Majör Gamı","detay":"Ayrı eller ile iki oktav olarak şekilli ritim çalışmalarının yapılması ve re majör tonunda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp2_1_3","ad":"CZERNY Opus 599 Piyano Metodu"}]},{"no":2,"donem":1,"konular":[{"id":"mp2_2_1","ad":"Re Majör Gamı Pekiştirme Çalışmaları"},{"id":"mp2_2_2","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_2_3","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Deşifre ve teknik çalışmaları"}]},{"no":3,"donem":1,"konular":[{"id":"mp2_3_1","ad":"Deşifre ve Teknik Çalışmalar","detay":"Do Majör sol majör ve re majör tonlarında ilgili etütlerin deşifre ve teknik çalışmalarının yapılması"},{"id":"mp2_3_2","ad":"CZERNY Opus 599 Piyano Metodu"},{"id":"mp2_3_3","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Deşifre ve teknik çalışmaları"}]},{"no":4,"donem":1,"konular":[{"id":"mp2_4_1","ad":"Deşifre ve Teknik Çalışmalar","detay":"Öğretmen tarafından uygun görülen basitleştirilmeleri için aranje edilip kısaltılmış eserlerin deşifre ve teknik çalışmaları 2 YÖngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi Müzikal ve stil çalışmaları"}]},{"no":5,"donem":1,"konular":[{"id":"mp2_5_1","ad":"Müzikalite Çalışmaları","detay":"Öğretmen tarafından uygun görülen basitleştirilmeleri için aranje edilip kısaltılmış eserlerin müzikal ve stil çalışmaları"},{"id":"mp2_5_2","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlgrimd","detay":"Müzikal ve stil çalışmaları"}]},{"no":6,"donem":1,"konular":[{"id":"mp2_6_1","ad":"Re Majör Gamı ve Arpeji","detay":"Ayrı eller ile iki oktav olarak şekilli ritim çalışmalarının yapılması ve re majör tonunda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp2_6_2","ad":"CZERNY Opus 599 Piyano Metodu"}]},{"no":7,"donem":1,"konular":[{"id":"mp2_7_1","ad":"La Majör Gamı","detay":"Ayrı eller ile iki oktav olarak şekilli ritim çalışmalarının yapılması ve re majör tonunda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp2_7_2","ad":"CZERNY Opus 599 Piyano Metodu"}]},{"no":8,"donem":1,"konular":[{"id":"mp2_8_1","ad":"SCHUMANN Gençlik Albümü 12-16. Parçalar","detay":"Deşifre ve teknik çalışmaları"}]},{"no":9,"donem":1,"konular":[{"id":"mp2_9_1","ad":"SCHUMANN Gençlik Albümü 12-16. Parçalar","detay":"Deşifre ve teknik çalışmaları"}]},{"no":10,"donem":1,"konular":[{"id":"mp2_10_1","ad":"SCHUMANN Gençlik Albümü 12-16. Parçalar","detay":"Müzikal ve stil çalışmaları"}]},{"no":11,"donem":1,"konular":[{"id":"mp2_11_1","ad":"SCHUMANN Gençlik Albümü 12-16. Parçalar","detay":"Müzikal ve stil çalışmaları"}]},{"no":12,"donem":1,"konular":[{"id":"mp2_12_1","ad":"SCHUMANN Gençlik Albümü 19. Parça","detay":"Deşifre ve teknik çalışmaları"}]},{"no":13,"donem":1,"konular":[{"id":"mp2_13_1","ad":"La Majör Gamı ve Arpeji","detay":"e Ayrı ellerile iki oktav olarak şekilli ritim çalışmalarının yapılması ve la majör tonunda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp2_13_2","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_13_3","ad":"SCHUMANN Gençlik Albümü 19. Parça","detay":"Müzikal ve stil çalışmaları"}]},{"no":14,"donem":1,"konular":[{"id":"mp2_14_1","ad":"CLEMENTİ Do Majör Sonatin","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp2_14_2","ad":"SCHUMANN Gençlik Albümü 19. Parça","detay":"Müzikal ve sti! çalışmaları"}]},{"no":15,"donem":1,"konular":[{"id":"mp2_15_1","ad":"CLEMENTİ Do Majör Sonatin","detay":"Müzikal stil ve teknik çalışmaları"},{"id":"mp2_15_2","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Deşifre ve teknik çalışmaları"}]},{"no":16,"donem":1,"konular":[{"id":"mp2_16_1","ad":"CLEMENTİ Do Majör Sonatin","detay":"se Müzikal ve stil çalışmaları"},{"id":"mp2_16_2","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Deşifre ve teknik çalışmaları"}]},{"no":17,"donem":1,"konular":[{"id":"mp2_17_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_17_2","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Müzikal ve stil çalışmaları"}]},{"no":18,"donem":1,"konular":[{"id":"mp2_18_1","ad":"Türk Bestecilerinden Kolay Bir Eser"},{"id":"mp2_18_2","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_18_3","ad":"Öngörülen Anna M. BACH Marche Menuet Polonaise Musette Eserlerinden Birisi","detay":"Müzikal ve stil çalışmaları"}]},{"no":19,"donem":1,"konular":[{"id":"mp2_19_1","ad":"Sağ El Melodi Ağırlıklı Çalışmalar","detay":"Re majör tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"},{"id":"mp2_19_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":20,"donem":1,"konular":[{"id":"mp2_20_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_20_2","ad":"Sol El Melodi Ağırlıklı Çalışmalar","detay":"Remajör tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"}]},{"no":21,"donem":2,"konular":[{"id":"mp2_21_1","ad":"SCHUMANN Gençlik Albümü","detay":"2. Eser deşifre ve teknik çalışmaları"}]},{"no":22,"donem":2,"konular":[{"id":"mp2_22_1","ad":"SCHUMANN Gençlik Albümü","detay":"e 2. Eser müzikal ve stil çalışmaları"}]},{"no":23,"donem":2,"konular":[{"id":"mp2_23_1","ad":"Tekrar","detay":"Bir önceki haftanın tekrarı"},{"id":"mp2_23_2","ad":"Sağ El Melodi Ağırlıklı Çalışmalar","detay":"se La Majör Tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"}]},{"no":24,"donem":2,"konular":[{"id":"mp2_24_1","ad":"Sol EL Melodi Ağırlıklı Çalışmalar","detay":"se La Majör Tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"},{"id":"mp2_24_2","ad":"CZERNY Piyano Metodu Opus 599"}]},{"no":25,"donem":2,"konular":[{"id":"mp2_25_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_25_2","ad":"SAYGUN “İnci'nin Kitabından”","detay":"e Örnek parçaların deşifre ve teknik çalışmaları"}]},{"no":26,"donem":2,"konular":[{"id":"mp2_26_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_26_2","ad":"SAYGUN “İnci'nin Kitabından”","detay":"e Örnek parçaların müzikal ve stil çalışmaları"}]},{"no":27,"donem":2,"konular":[{"id":"mp2_27_1","ad":"Tekrar","detay":"Bir önceki haftanın tekrarı"}]},{"no":28,"donem":2,"konular":[{"id":"mp2_28_1","ad":"CZERNY Piyano Metodu Opus 599"},{"id":"mp2_28_2","ad":"Etüt Çalışmaları"}]},{"no":29,"donem":2,"konular":[{"id":"mp2_29_1","ad":"HANON Piyano Metodu"}]},{"no":30,"donem":2,"konular":[{"id":"mp2_30_1","ad":"DU HANON Piyano Metodu"},{"id":"mp2_30_2","ad":"Sınav Repertuvarı Çalışmaları"}]},{"no":31,"donem":2,"konular":[{"id":"mp2_31_1","ad":"Re majör ve la majör tonlarında öğretmenin öngördüğü etüt çalışmaları","detay":"Sınav Repertuvarı Çalışmaları"}]},{"no":32,"donem":2,"konular":[{"id":"mp2_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp2_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Sınav için seçilmiş gam ve arpejlerinin ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Czerny opus 599 piyano metodundan sınav için seçilmiş etütlerin tiği nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çal değerlendirme\nc. Schumann gençlik albümünden seçili eserin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Clementi Sonatin eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme"}]}],"ozet":"Gam ve arpejler, segmentel teknik, Czerny op. 599, Hanon, Anna M. Bach, Clementi sonatin, Schumann Gençlik Albümü"},{"no":3,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp3_1_1","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_1_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_1_3","ad":"1J.S. BACH Menuetto No:2","detay":"Deşifre ve teknik çalışmaları"}]},{"no":2,"donem":1,"konular":[{"id":"mp3_2_1","ad":"Iİ) HANON Teknikleri Piyano Metodu"},{"id":"mp3_2_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_2_3","ad":"J.S. BACH Menuetto No:2","detay":"Müzikal ve stil çalışmaları"}]},{"no":3,"donem":1,"konular":[{"id":"mp3_3_1","ad":"SCHUMANN Gençlik Albümü “Hırçın Atlı” Parçası Deşifre ve teknik","detay":"çalışmaları"},{"id":"mp3_3_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_3_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":4,"donem":1,"konular":[{"id":"mp3_4_1","ad":"SCHUMANN Gençlik Albümü “Hırçın Atlı” Parçası","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_4_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_4_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":5,"donem":1,"konular":[{"id":"mp3_5_1","ad":"KUHLAU Do Majör Sonatin 1-2. Bölümleri","detay":"Deşifre ve teknik çalışmalar"},{"id":"mp3_5_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_5_3","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_5_4","ad":"Mi Majör Gamı ve Arpeji","detay":"Ayrı eller ile iki oktav olarak şekilli ritim çalışmalarının yapılması ve, mar-majör tonunda ilgili parçalar ile pekiştirilmeleri « K m"}]},{"no":6,"donem":1,"konular":[{"id":"mp3_6_1","ad":"KUHLAU Do Majör Sonatin 2-3. Bölümleri","detay":"Deşifre ve teknik çalışmalar"},{"id":"mp3_6_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_6_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":7,"donem":1,"konular":[{"id":"mp3_7_1","ad":"KUHLAU Do Majör Sonatin 1-2. Bölümleri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_7_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_7_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":8,"donem":1,"konular":[{"id":"mp3_8_1","ad":"KUHLAU Do Majör Sonatin 2-3. Bölümleri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_8_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_8_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":9,"donem":1,"konular":[{"id":"mp3_9_1","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_9_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_9_3","ad":"SCHUMANN Gençlik Albümü 20-23. Parçalar","detay":"Deşifre ve teknik çalışmaları"}]},{"no":10,"donem":1,"konular":[{"id":"mp3_10_1","ad":"ID HANON Teknikleri Piyano Metodu"},{"id":"mp3_10_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_10_3","ad":"SCHUMANN Gençlik Albümü 20-23. Parçalar","detay":"Deşifre ve teknik çalışmaları"}]},{"no":11,"donem":1,"konular":[{"id":"mp3_11_1","ad":"Sağ E! Melodi Ağırlıklı Çalışmalar","detay":"Mi Majör Tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"},{"id":"mp3_11_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_11_3","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_11_4","ad":"SCHUMANN Gençlik Albümü 20-23. Parçalar","detay":"Müzikal ve stil çalışmaları"}]},{"no":12,"donem":1,"konular":[{"id":"mp3_12_1","ad":"Sol El Melodi Ağırlıklı Çalışmalar","detay":"Mi Majör Tonunda ilgili parçalar ile yapılacak pekiştirici çalışmalar"},{"id":"mp3_12_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_12_3","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_12_4","ad":"SCHUMANN Gençlik Albümü 20-23. Parçalar","detay":"Stil ve müzikal çalışmaları"}]},{"no":13,"donem":1,"konular":[{"id":"mp3_13_1","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_13_2","ad":"CLEMENTİ Rondo Eseri","detay":"Deşifre ve teknik çalışmaları"}]},{"no":14,"donem":1,"konular":[{"id":"mp3_14_1","ad":"CLEMENTİ Rondo Eseri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_14_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":15,"donem":1,"konular":[{"id":"mp3_15_1","ad":"U BACH Re Majör Musette Eseri","detay":"Teknik ve deşifre çalışmalar"},{"id":"mp3_15_2","ad":"SCHUMANN Gençlik Albümü 25. Parça","detay":"Deşifre ve teknik çalışmaları"}]},{"no":16,"donem":1,"konular":[{"id":"mp3_16_1","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_16_2","ad":"BACH Re Majör Musette Eseri","detay":"Müzikal ve stil çalışmalar"},{"id":"mp3_16_3","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_16_4","ad":"SCRUMANN Gençlik Albümü 25. Parça","detay":"Deşifre ve teknik çalışmaları"}]},{"no":17,"donem":1,"konular":[{"id":"mp3_17_1","ad":"BEETHOVEN Sonatin Sol Majör (Sol Minör) Veya MOZART Do Majör Sonata","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp3_17_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_17_3","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_17_4","ad":"SCHUMANN Gençlik Albümü 25. Parçalar","detay":"Müzikal ve stil çalışmaları"}]},{"no":18,"donem":1,"konular":[{"id":"mp3_18_1","ad":"MOZART Sonata 1. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp3_18_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_18_3","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_18_4","ad":"SCHUMANN Gençlik Albümü 25. Parçalar","detay":"Müzikal ve stil çalışmaları"}]},{"no":19,"donem":1,"konular":[{"id":"mp3_19_1","ad":"MOZART Sonata 1. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp3_19_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_19_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":20,"donem":1,"konular":[{"id":"mp3_20_1","ad":"Çalışılan Eserlerin Pekiştirilmeleri"},{"id":"mp3_20_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_20_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp3_21_1","ad":"MOZART Sonata 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp3_21_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_21_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":22,"donem":2,"konular":[{"id":"mp3_22_1","ad":"UY MOZART Sonata 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_22_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_22_3","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp3_22_4","ad":"Si Majör Gamı ve Arpeji","detay":"e o Ayrellerile iki oktav olarak şekilli ritim çalışmalarının yapılması ve si majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":23,"donem":2,"konular":[{"id":"mp3_23_1","ad":"MOZART Sonata 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp3_23_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_23_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":24,"donem":2,"konular":[{"id":"mp3_24_1","ad":"MOZART Sonata 3. Bölüm","detay":"e Deşifre ve teknik çalışmaları"},{"id":"mp3_24_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_24_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":25,"donem":2,"konular":[{"id":"mp3_25_1","ad":"MOZART Sonata 3. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp3_25_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_25_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":26,"donem":2,"konular":[{"id":"mp3_26_1","ad":"MOZART Sonata 3. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp3_26_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp3_26_3","ad":"HANON Teknikleri Piyano Metodu"}]},{"no":27,"donem":2,"konular":[{"id":"mp3_27_1","ad":"Standart Orkestra Soloları Klasik Dönem"}]},{"no":28,"donem":2,"konular":[{"id":"mp3_28_1","ad":"Standart Orkestra Soloları Klasik Dönem"}]},{"no":29,"donem":2,"konular":[{"id":"mp3_29_1","ad":"Standart Orkestra Soloları Romantik Dönem"}]},{"no":30,"donem":2,"konular":[{"id":"mp3_30_1","ad":"Standart Orkestra Soloları Romantik Dönem"}]},{"no":31,"donem":2,"konular":[{"id":"mp3_31_1","ad":"Standart Orkestra Soloları Çağdaş Dönem"}]},{"no":32,"donem":2,"konular":[{"id":"mp3_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp3_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Sınav için seçilmiş minör gam ve arpejlerinin ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Czerny opus 299 piyano metodundan sınav için seçilmiş etütlerin ya da Schumann gençlik albümünden seçili eserin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Beethoven sonatin sol majör (sol minör) ya da mozart do majör, Sölatin eserlerinin ritim nota nüans teknik ve müzikalite açılarından oğiu .şekilde çalınıp çalınmadığını değerlendirme ö i\nd. J.S Bach menuetto no: 2 ya da J.S Bach re majör"}]}],"ozet":"Czerny op. 299, Hanon, J.S. Bach Menuetto, Kuhlau sonatin, Clementi Rondo, Mozart sonat, Beethoven sonatin"},{"no":4,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp4_1_1","ad":"Öğrenilen Tüm Majör Gamlar","detay":"İki el ve 4 oktav olarak çalışılması"},{"id":"mp4_1_2","ad":"Piyano Edebiyatı","detay":"a. Önemli dönemleri (Rönesans Barok) inceleme\nb. Önemli bestecileri inceleme\ne. Önemli eserleri (Konçerto) inceleme"}]},{"no":2,"donem":1,"konular":[{"id":"mp4_2_1","ad":"Öğrenilen Tüm Majör Gamlar","detay":"İki el ve 4 oktav olarak çalışılması"},{"id":"mp4_2_2","ad":"Piyano Edebiyatı","detay":"a. Önemli dönemleri (Klasik romantik) inceleme\nb. Önemli bestecileri inceleme\nç, Önemli eserleri (Sonat) inceleme"}]},{"no":3,"donem":1,"konular":[{"id":"mp4_3_1","ad":"Fa Diyez Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve fa diyez majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":4,"donem":1,"konular":[{"id":"mp4_4_1","ad":"Do Diyez Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve fa diyez majör tonunda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp4_4_2","ad":"Piyano Edebiyatı","detay":"a. Önemli dönemleri (Çağdaş) inceleme\nb. Önemli dönemleri (Çağdaş) inceleme\nc. Önemli eserleri (Oda müziği) inceleme"}]},{"no":5,"donem":1,"konular":[{"id":"mp4_5_1","ad":"HAYDN Konçerto Re Majör Eseri","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_5_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":6,"donem":1,"konular":[{"id":"mp4_6_1","ad":"HAYDN Konçerto Re Majör Eseri","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_6_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":7,"donem":1,"konular":[{"id":"mp4_7_1","ad":"HAYDN Konçerto Re Majör Eseri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_7_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":8,"donem":1,"konular":[{"id":"mp4_8_1","ad":"HAYDN Konçerto Re Majör Eseri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_8_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":9,"donem":1,"konular":[{"id":"mp4_9_1","ad":"HAYDN Konçerto Re Majör Eseri","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_9_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp4_9_3","ad":"La Minör Gamı ve Arpeji","detay":"Armonik (Dizinin çıkışta ve inişte 7. derecesinin inceltilmiş hali) olarak Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve la minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":10,"donem":1,"konular":[{"id":"mp4_10_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_10_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_10_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":11,"donem":1,"konular":[{"id":"mp4_11_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_11_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_11_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":12,"donem":1,"konular":[{"id":"mp4_12_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_12_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_12_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":13,"donem":1,"konular":[{"id":"mp4_13_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_13_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_13_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":14,"donem":1,"konular":[{"id":"mp4_14_1","ad":"BEETHOVEN 1. Concerto Do Majör 3. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_14_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_14_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":15,"donem":1,"konular":[{"id":"mp4_15_1","ad":"BEETHOVEN . Concerto Do Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_15_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_15_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":16,"donem":1,"konular":[{"id":"mp4_16_1","ad":"BEETHOVEN 1. Concerto Do Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_16_2","ad":"BEETHOVEN Sonatin Sol Majör","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_16_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":17,"donem":1,"konular":[{"id":"mp4_17_1","ad":"CLEMENTİ Sonatin Sol Majör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_17_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":18,"donem":1,"konular":[{"id":"mp4_18_1","ad":"CLEMENTİ Sonatin Sol Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_18_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":19,"donem":1,"konular":[{"id":"mp4_19_1","ad":"CLEMENTİ Sonatin Sol Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_19_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp4_19_3","ad":"Form Bilgisi","detay":"Müzik formlarının piyano eserleri üzerinde İncelenmesi\na. İkili (İki kısımlı) form\nb. Üçlü form\nc. Sonat formu (Sergileme gelişme ve yeniden sergileme)"}]},{"no":20,"donem":1,"konular":[{"id":"mp4_20_1","ad":"CLEMENTİ Sonatin Sol Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_20_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp4_21_1","ad":"CLEMENTİ Sonatin Sol Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_21_2","ad":"HANON Teknik Etüt Çalışmaları"},{"id":"mp4_21_3","ad":"Mi Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve mi minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":22,"donem":2,"konular":[{"id":"mp4_22_1","ad":"CLEMENTİ Sonatin Sol Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_22_2","ad":"HANON Teknik Etüt Çalışmaları"},{"id":"mp4_22_3","ad":"Form Bilgisi","detay":"Müzik formlarının piyano eserleri üzerinde İncelenmesi\na. Rondo formu (Bir bölümün yeniden ve yeniden tekrarlanması ile oluşur)\nb. Tema ve varyasyonlar (Ana konu ve çeşitlemeleri)\nc. Füg (Eserin ana temasının farklı tonlarda tekrarlanması ile oluşur) s8”"}]},{"no":23,"donem":2,"konular":[{"id":"mp4_23_1","ad":"CLEMENTİ Sonatin Sol Majör 3. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp4_23_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":24,"donem":2,"konular":[{"id":"mp4_24_1","ad":"CLEMENTİ Sonatin Sol Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_24_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":25,"donem":2,"konular":[{"id":"mp4_25_1","ad":"CLEMENTİ Sonatin Sol Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp4_25_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":26,"donem":2,"konular":[{"id":"mp4_26_1","ad":"Oda Müziği Repertuvarı “POULENC SEXTET”"},{"id":"mp4_26_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":27,"donem":2,"konular":[{"id":"mp4_27_1","ad":"Oda Müziği Repertuvarı “POULENC SEXTET”"},{"id":"mp4_27_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":28,"donem":2,"konular":[{"id":"mp4_28_1","ad":"Oda Müziği Repertuvarı “POULENC SEXTET”"},{"id":"mp4_28_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":29,"donem":2,"konular":[{"id":"mp4_29_1","ad":"Oda Müziği Repertuvarı “POULENC SEXTET”"},{"id":"mp4_29_2","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":30,"donem":2,"konular":[{"id":"mp4_30_1","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":31,"donem":2,"konular":[{"id":"mp4_31_1","ad":"HANON Teknik Etüt Çalışmaları"}]},{"no":32,"donem":2,"konular":[{"id":"mp4_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp4_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Sınav için seçilmiş iki el gam ve arpejlerinin ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Beethoven sol majör sonatin ya da Clementi sonatin sol majör sonat eserlerinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Haydn Concerto re majör eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Czerny opus 288 ya da Hanon Etütlerinden seçili olanların ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çal"}]}],"ozet":"Piyano edebiyatı ve form bilgisi, Beethoven sonatin, Haydn konçerto, Czerny op. 299, Hanon"},{"no":5,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp5_1_1","ad":"D BACH Concerto Re Minör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_1_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_1_3","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp5_1_4","ad":"Si Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve fa diyez majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":2,"donem":1,"konular":[{"id":"mp5_2_1","ad":"BACH Concerto Re Minör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_2_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_2_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":3,"donem":1,"konular":[{"id":"mp5_3_1","ad":"BACH Concerto Re Minör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_3_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_3_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":4,"donem":1,"konular":[{"id":"mp5_4_1","ad":"U BACH Concerto Re Minör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_4_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_4_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":5,"donem":1,"konular":[{"id":"mp5_5_1","ad":"BACH Concerto Re Minör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_5_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_5_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":6,"donem":1,"konular":[{"id":"mp5_6_1","ad":"BACH Concerto Re Minör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_6_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_6_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":7,"donem":1,"konular":[{"id":"mp5_7_1","ad":"BACH Concerto 3. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_7_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_7_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":8,"donem":1,"konular":[{"id":"mp5_8_1","ad":"BACH Concerto Re Minör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_8_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_8_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":9,"donem":1,"konular":[{"id":"mp5_9_1","ad":"BACH Concerto Re Minör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_9_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_9_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":10,"donem":1,"konular":[{"id":"mp5_10_1","ad":"U MOZART Sonata Fa Majör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_10_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_10_3","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp5_10_4","ad":"Fa Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve fa majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":11,"donem":1,"konular":[{"id":"mp5_11_1","ad":"MOZART Sonata Fa Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_11_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_11_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":12,"donem":1,"konular":[{"id":"mp5_12_1","ad":"MOZART Sonata Fa Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_12_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_12_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":13,"donem":1,"konular":[{"id":"mp5_13_1","ad":"MOZART Sonata Fa Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_13_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_13_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":14,"donem":1,"konular":[{"id":"mp5_14_1","ad":"MOZART Sonata Fa Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_14_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_14_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":15,"donem":1,"konular":[{"id":"mp5_15_1","ad":"MOZART Sonata Fa Majör 2. Bölüm","detay":"se Müzikal ve stil çalışmaları"},{"id":"mp5_15_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_15_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":16,"donem":1,"konular":[{"id":"mp5_16_1","ad":"MOZART Sonata Fa Majör 3. Bölüm","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp5_16_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_16_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":17,"donem":1,"konular":[{"id":"mp5_17_1","ad":"U MOZART Sonata Fa Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_17_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_17_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":18,"donem":1,"konular":[{"id":"mp5_18_1","ad":"MOZART Sonata Fa Majör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"},{"id":"mp5_18_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_18_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":19,"donem":1,"konular":[{"id":"mp5_19_1","ad":"MOZART Sonata Fa Majör Tüm Bölümler"},{"id":"mp5_19_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_19_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":20,"donem":1,"konular":[{"id":"mp5_20_1","ad":"MOZART Sonata Fa Majör Tüm Bölümler"},{"id":"mp5_20_2","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_20_3","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp5_21_1","ad":"U YANN TIERSEN Amélie Eseri"},{"id":"mp5_21_2","ad":"Standart Orkestra Soloları"}]},{"no":22,"donem":2,"konular":[{"id":"mp5_22_1","ad":"YANN TIERSEN Amélie Eseri"},{"id":"mp5_22_2","ad":"Standart Orkestra Soloları"}]},{"no":23,"donem":2,"konular":[{"id":"mp5_23_1","ad":"YANN TIERSEN Amélie Eseri"},{"id":"mp5_23_2","ad":"Standart Orkestra Soloları"}]},{"no":24,"donem":2,"konular":[{"id":"mp5_24_1","ad":"YANN TIERSEN Amélie Eseri"},{"id":"mp5_24_2","ad":"Standart Orkestra Soloları"},{"id":"mp5_24_3","ad":"Fa Diyez Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve fa diyez minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":25,"donem":2,"konular":[{"id":"mp5_25_1","ad":"Standard Opera Orkestrası Soloları"}]},{"no":26,"donem":2,"konular":[{"id":"mp5_26_1","ad":"Standard Opera Orkestrası Soloları"}]},{"no":27,"donem":2,"konular":[{"id":"mp5_27_1","ad":"HANON Teknikleri Piyano Metodu"},{"id":"mp5_27_2","ad":"CZERNY Opus 299 Piyano Metodu"},{"id":"mp5_27_3","ad":"Si Bemol Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve si bemol majör tonunda ilgili parçalar ile pe kiştiri j"}]},{"no":28,"donem":2,"konular":[{"id":"mp5_28_1","ad":"1D) HANON Teknikleri Piyano Metodu"},{"id":"mp5_28_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":29,"donem":2,"konular":[{"id":"mp5_29_1","ad":"1 HANON Teknikleri Piyano Metodu"},{"id":"mp5_29_2","ad":"CZERNY Opus 299 Piyano Metodu"}]},{"no":30,"donem":2,"konular":[{"id":"mp5_30_1","ad":"Kromatik Gam Çalışmaları"}]},{"no":31,"donem":2,"konular":[{"id":"mp5_31_1","ad":"Kromatik Gam Çalışmaları"}]},{"no":32,"donem":2,"konular":[{"id":"mp5_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp5_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Kromatik gamın ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Mozart Sonat fa majör ya da Yanntiersin amellia eserlerinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Bach concerto re minör eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Czerny opus 299 ya da Hanon etütlerinden seçili olanların ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme"}]}],"ozet":"Bach konçerto re minör, Hanon, Czerny op. 299, Mozart sonat, kromatik gam"},{"no":6,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp6_1_1","ad":"CLEMENTİ Sonatin No.4 Fa Major 1. Bölüm","detay":"Teknik ve deşifre çalışmaları"},{"id":"mp6_1_2","ad":"Do Diyez Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve do diyez majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":2,"donem":1,"konular":[{"id":"mp6_2_1","ad":"CLEMENTI Sonatine Fa Majör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":3,"donem":1,"konular":[{"id":"mp6_3_1","ad":"CLEMENTI Sonatine Fa Majör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":4,"donem":1,"konular":[{"id":"mp6_4_1","ad":"CLEMENTI Sonatine Fa Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":5,"donem":1,"konular":[{"id":"mp6_5_1","ad":"CLEMENTİ Sonatine Fa Majör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_5_2","ad":"Mi Bemol Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"}]},{"no":6,"donem":1,"konular":[{"id":"mp6_6_1","ad":"CLEMENTİ Sonatine Fa Majör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":7,"donem":1,"konular":[{"id":"mp6_7_1","ad":"BACH 2 Sesli Envansiyon","detay":"Teknik ve deşifre çalışmaları"},{"id":"mp6_7_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":8,"donem":1,"konular":[{"id":"mp6_8_1","ad":"BACH 2 Sesli Envansiyon","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_8_2","ad":"CZERNY Opus 849 Piyano Metodu","detay":"Sol Diyez Majör Gamı ve Arpeji Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve sol diyez minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":9,"donem":1,"konular":[{"id":"mp6_9_1","ad":"BACH 2 Sesli Envansiyon","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_9_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":10,"donem":1,"konular":[{"id":"mp6_10_1","ad":"BACH 2 Sesli Envansiyon","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_10_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":11,"donem":1,"konular":[{"id":"mp6_11_1","ad":"DİABELLİ Sonatine Si Bemol Majör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_11_2","ad":"CZERNY Opus 849 Piyano Metodu"},{"id":"mp6_11_3","ad":"La Bemol Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve la bemol majör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":12,"donem":1,"konular":[{"id":"mp6_12_1","ad":"DİABELLİ Sonatine Si Bemol Majör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_12_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":13,"donem":1,"konular":[{"id":"mp6_13_1","ad":"DİABELLİ Sonatine Si Bemol Majör 2. Bölüm","detay":"Teknik ve deşifre çalışmaları"},{"id":"mp6_13_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":14,"donem":1,"konular":[{"id":"mp6_14_1","ad":"DİABELLİ Sonatine Si Bemol Majör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_14_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":15,"donem":1,"konular":[{"id":"mp6_15_1","ad":"DİABELLİ Sonatine Si Bemol Majör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_15_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":16,"donem":1,"konular":[{"id":"mp6_16_1","ad":"DİABELLİ Sonatine Si Bemol Majör 3. Bölüm","detay":"Teknik ve deşifre çalışmaları"},{"id":"mp6_16_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":17,"donem":1,"konular":[{"id":"mp6_17_1","ad":"DİABELLİ Sonatine Si Bemol Majör 3. Bölüm","detay":"Stil ve müzikal çalışmaları"},{"id":"mp6_17_2","ad":"CZERNY op. 849 Etüd Çalışmaları"},{"id":"mp6_17_3","ad":"Re Diyez Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve re diyez minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":18,"donem":1,"konular":[{"id":"mp6_18_1","ad":"DİABELLİ Sonatine Si Bemol Majör 3. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":19,"donem":1,"konular":[{"id":"mp6_19_1","ad":"CZERNY Opus 849 Piyano Metodu"},{"id":"mp6_19_2","ad":"La Diyez Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve la diyez minör tonunda ilgili parçalar ile pekiştirilmeleri"}]},{"no":20,"donem":1,"konular":[{"id":"mp6_20_1","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp6_21_1","ad":"HAYDN Sonata Mi Minör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":22,"donem":2,"konular":[{"id":"mp6_22_1","ad":"HAYDN Sonata Mi Minör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":23,"donem":2,"konular":[{"id":"mp6_23_1","ad":"Re Bemol Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_23_2","ad":"HAYDN Sonata Mi Minör 1. Bölüm: Müzikal ve stil çalışmaları"}]},{"no":24,"donem":2,"konular":[{"id":"mp6_24_1","ad":"HAYDN Sonata Mi Minör 2. Bölüm:Deşifre ve teknik çalışmaları"}]},{"no":25,"donem":2,"konular":[{"id":"mp6_25_1","ad":"Re Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çifi el dört oktav olarak şekilli çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_25_2","ad":"HAYDN Sonata Mi Minör 2. Bölüm : Müzikal ve stil çalışmaları"}]},{"no":26,"donem":2,"konular":[{"id":"mp6_26_1","ad":"Sol Bemol Majör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_26_2","ad":"Sol Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_26_3","ad":"HAYDN Sonata Mi Minör 2. Bölüm :Müzikal ve stil çalışmaları"}]},{"no":27,"donem":2,"konular":[{"id":"mp6_27_1","ad":"Do Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_27_2","ad":"HAYDN Sonata Mi Minör 3. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":28,"donem":2,"konular":[{"id":"mp6_28_1","ad":"Do Bemol Majör Gamı ve Arpeji","detay":"gp KAPİ Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_28_2","ad":"HAYDN Sonata Mi Minör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":29,"donem":2,"konular":[{"id":"mp6_29_1","ad":"Fa Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_29_2","ad":"HAYDN Sonata Mi Minör 3. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":30,"donem":2,"konular":[{"id":"mp6_30_1","ad":"Si Bemol Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_30_2","ad":"Korrepetisyon Çalışmaları"}]},{"no":31,"donem":2,"konular":[{"id":"mp6_31_1","ad":"Mi Bemol Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli ritim çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştirilmeleri"},{"id":"mp6_31_2","ad":"Korrepetisyon Çalışmaları"}]},{"no":32,"donem":2,"konular":[{"id":"mp6_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp6_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Kromatik gamın ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Haydn Sonat mi minör eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Diabelli Sonatine si bemol majör eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Czerny op. 849 metodundan seçili etütlerin ritim müzikalite stil açılarından doğru şekilde çalınıp çalınmadığını değerlendirme"}]}],"ozet":"Gam ve arpejler, Clementi sonatin, Bach 2 sesli envansiyon, Czerny op. 849, Diabelli sonatin, Haydn sonat"},{"no":7,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp7_1_1","ad":"La Bemol Minör Gamı ve Arpeji","detay":"Önce ayrı eller ile iki oktav ve sonra çift el dört oktav olarak şekilli LL EE çalışmalarının yapılması ve ilgili tonda ilgili parçalar ile pekiştiilmeli” Ş >"},{"id":"mp7_1_2","ad":"BEETHOVEN Sonat No:1 Eseri ğ","detay":"Deşifre ve teknik çalışmaları"}]},{"no":2,"donem":1,"konular":[{"id":"mp7_2_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Deşifre ve teknik çalışmaları"}]},{"no":3,"donem":1,"konular":[{"id":"mp7_3_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Deşifre ve teknik çalışmaları"}]},{"no":4,"donem":1,"konular":[{"id":"mp7_4_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp7_4_2","ad":"Melodik Minör Gamları","detay":"Öğrenilen tüm minör gamların melodik halleri (dizinin çıkışta 6. ve 7 Derecelerinin yarım ses inceltilmesi ve inişte naturelleştirilmesi)nin çalışılması"}]},{"no":5,"donem":1,"konular":[{"id":"mp7_5_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Müzikal stil çalışmaları"},{"id":"mp7_5_2","ad":"Melodik Minör Gamları","detay":"Öğrenilen tüm minör gamların melodik halleri (dizinin çıkışta 6. ve 7 Derecelerinin yarım ses inceltilmesi ve inişte naturelleştirilmesi)nin çalışılması"}]},{"no":6,"donem":1,"konular":[{"id":"mp7_6_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Müzikal ve stil çalışmaları"},{"id":"mp7_6_2","ad":"Melodik Minör Gamları","detay":"Öğrenilen tüm minör gamların melodik halleri (dizinin çıkışta 6. ve 7 Derecelerinin yarım ses inceltilmesi ve inişte naturelleştirilmesi)nin çalışılması"}]},{"no":7,"donem":1,"konular":[{"id":"mp7_7_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Müzikal stil ve ezber çalışmaları"}]},{"no":8,"donem":1,"konular":[{"id":"mp7_8_1","ad":"BEETHOVEN Sonat No:1 Eseri","detay":"Ezber çalışmaları"}]},{"no":9,"donem":1,"konular":[{"id":"mp7_9_1","ad":"BEETHOVEN Sonat Sol Minör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":10,"donem":1,"konular":[{"id":"mp7_10_1","ad":"BEETHOVEN Sonat Sol Minör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":11,"donem":1,"konular":[{"id":"mp7_11_1","ad":"BEETHOVEN Sonat Sol Minör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":12,"donem":1,"konular":[{"id":"mp7_12_1","ad":"BEETHOVEN Sonat Sol Minör 1. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":13,"donem":1,"konular":[{"id":"mp7_13_1","ad":"BEETHOVEN Sonat Sol Minör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":14,"donem":1,"konular":[{"id":"mp7_14_1","ad":"BEETHOVEN Sonat Sol Minör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":15,"donem":1,"konular":[{"id":"mp7_15_1","ad":"BEETHOVEN Sonat Sol Minör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":16,"donem":1,"konular":[{"id":"mp7_16_1","ad":"BEETHOVEN Sonat Sol Minör 2. Bölüm","detay":"Stil ve müzikal çalışmaları"}]},{"no":17,"donem":1,"konular":[{"id":"mp7_17_1","ad":"CHOPIN Ballade No. 1","detay":"Deşifre ve teknik çalışmaları"}]},{"no":18,"donem":1,"konular":[{"id":"mp7_18_1","ad":"CHOPIN Ballade No. 1","detay":"Müzikal ve stil çalışmaları"}]},{"no":19,"donem":1,"konular":[{"id":"mp7_19_1","ad":"CHOPIN Ballade No. 1","detay":"Müzikal ve stil çalışmaları"}]},{"no":20,"donem":1,"konular":[{"id":"mp7_20_1","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp7_21_1","ad":"BEETHOVEN “Moonlight” Sonata","detay":"Deşifre ve teknik çalışmaları"},{"id":"mp7_21_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":22,"donem":2,"konular":[{"id":"mp7_22_1","ad":"BEETHOVEN “Moonlight” Sonata","detay":"Stil ve müzikal çalışmaları"},{"id":"mp7_22_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":23,"donem":2,"konular":[{"id":"mp7_23_1","ad":"BEETHOVEN “Moonlight” Sonata","detay":"Stil ve müzikal çalışmaları"},{"id":"mp7_23_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":24,"donem":2,"konular":[{"id":"mp7_24_1","ad":"Korrepetisyon Çalışmaları"},{"id":"mp7_24_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":25,"donem":2,"konular":[{"id":"mp7_25_1","ad":"Korrepetisyon Çalışmaları"},{"id":"mp7_25_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":26,"donem":2,"konular":[{"id":"mp7_26_1","ad":"Majör Gamların Dominant Arpejleri","detay":"Çift el ve 4 oktav olarak"}]},{"no":27,"donem":2,"konular":[{"id":"mp7_27_1","ad":"Majör Gamların Dominant Arpejleri","detay":"Çift el ve 4 oktav olarak"}]},{"no":28,"donem":2,"konular":[{"id":"mp7_28_1","ad":"Minör Gamların Dominant Arpejleri","detay":"Çift el ve 4 oktav olarak"}]},{"no":29,"donem":2,"konular":[{"id":"mp7_29_1","ad":"Minör Gamların Dominant Arpejleri","detay":"Çift el ve 4 oktav olarak"}]},{"no":30,"donem":2,"konular":[{"id":"mp7_30_1","ad":"Majör ve Minör Gamların Dominant Arpejleri"},{"id":"mp7_30_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":31,"donem":2,"konular":[{"id":"mp7_31_1","ad":"Sınav Hazırlıkları"}]},{"no":32,"donem":2,"konular":[{"id":"mp7_32_1","ad":"Sınav Hazırlıkları"}]},{"no":33,"donem":2,"konular":[{"id":"mp7_33_1","ad":"Sınav"}]},{"no":34,"donem":2,"konular":[{"id":"mp7_34_1","ad":"Sınav Değerlendirmesi","detay":"a. Majör ve minör gamların dominant arpejlerinin ritim teknik ve parmak numaraları açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Beethoven “Moonlight Sonata” eserlerinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Beethoven sonat sol minör ya da No: 1 eserinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Czerny opus 849 metodundan seçili olanların ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme"}]}],"ozet":"Melodik minörler, Beethoven sonat no 1 ve sol minör, Chopin ballade, Czerny op. 849"},{"no":8,"haftalar":[{"no":1,"donem":1,"konular":[{"id":"mp8_1_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları Şak N"}]},{"no":2,"donem":1,"konular":[{"id":"mp8_2_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Deşifre ve teknik çalışmaları iğ AŞ"}]},{"no":3,"donem":1,"konular":[{"id":"mp8_3_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":4,"donem":1,"konular":[{"id":"mp8_4_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":5,"donem":1,"konular":[{"id":"mp8_5_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":6,"donem":1,"konular":[{"id":"mp8_6_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":7,"donem":1,"konular":[{"id":"mp8_7_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":8,"donem":1,"konular":[{"id":"mp8_8_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":9,"donem":1,"konular":[{"id":"mp8_9_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Ezber çalışmaları"}]},{"no":10,"donem":1,"konular":[{"id":"mp8_10_1","ad":"BEETHOVEN 1. Concerto Do Majör 1. Bölüm","detay":"Ezber çalışmaları"}]},{"no":11,"donem":1,"konular":[{"id":"mp8_11_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Ezber çalışmaları"}]},{"no":12,"donem":1,"konular":[{"id":"mp8_12_1","ad":"BEETHOVEN 1. Concerto Do Majör 2. Bölüm","detay":"Ezber çalışmaları"}]},{"no":13,"donem":1,"konular":[{"id":"mp8_13_1","ad":"CHOPIN Valse Do Diyez Minör","detay":"Deşifre ve teknik çalışmaları"}]},{"no":14,"donem":1,"konular":[{"id":"mp8_14_1","ad":"CHOPIN Valse Do Diyez Minör","detay":"Deşifre ve teknik çalışmaları"}]},{"no":15,"donem":1,"konular":[{"id":"mp8_15_1","ad":"CHOPIN Valse Do Diyez Minör","detay":"Müzikal ve stil çalışmaları"}]},{"no":16,"donem":1,"konular":[{"id":"mp8_16_1","ad":"CHOPIN Valse Do Diyez Minör","detay":"Müzikal ve stil çalışmaları"}]},{"no":17,"donem":1,"konular":[{"id":"mp8_17_1","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":18,"donem":1,"konular":[{"id":"mp8_18_1","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":19,"donem":1,"konular":[{"id":"mp8_19_1","ad":"Alexander Teknik Haftası"},{"id":"mp8_19_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":20,"donem":1,"konular":[{"id":"mp8_20_1","ad":"Alexander Teknik Haftası"},{"id":"mp8_20_2","ad":"CZERNY Opus 849 Piyano Metodu"}]},{"no":21,"donem":2,"konular":[{"id":"mp8_21_1","ad":"MOZART Concerto Do Majör 1. Bölüm","detay":"Teknik ve deşifre çalışmaları"}]},{"no":22,"donem":2,"konular":[{"id":"mp8_22_1","ad":"MOZART Concerto Do Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":23,"donem":2,"konular":[{"id":"mp8_23_1","ad":"MOZART Concerto Do Majör 1. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":24,"donem":2,"konular":[{"id":"mp8_24_1","ad":"MOZART Concerto Do Majör 2. Bölüm","detay":"Deşifre ve teknik çalışmaları"}]},{"no":25,"donem":2,"konular":[{"id":"mp8_25_1","ad":"MOZART Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":26,"donem":2,"konular":[{"id":"mp8_26_1","ad":"MOZART Concerto Do Majör 2. Bölüm","detay":"Müzikal ve stil çalışmaları"}]},{"no":27,"donem":2,"konular":[{"id":"mp8_27_1","ad":"MOZART Concerto Do Majör 3. Bölüm","detay":"Teknik ve deşifre çalışmaları"}]},{"no":28,"donem":2,"konular":[{"id":"mp8_28_1","ad":"MOZART Concerto Do Majör 3. Bölüm","detay":"Teknik çalışmaları"}]},{"no":29,"donem":2,"konular":[{"id":"mp8_29_1","ad":"MOZART Concerto Do Majör 3. Bölüm","detay":"Teknik çalışmaları"}]},{"no":30,"donem":2,"konular":[{"id":"mp8_30_1","ad":"Sınav Repertuvarı Pekiştirme"}]},{"no":31,"donem":2,"konular":[{"id":"mp8_31_1","ad":"Sınav Repertuvarı Pekiştirme"}]},{"no":32,"donem":2,"konular":[{"id":"mp8_32_1","ad":"Sınav"}]},{"no":33,"donem":2,"konular":[{"id":"mp8_33_1","ad":"Sınav Değerlendirmesi","detay":"a. Beethoven 1. Concerto 1. ve 2. bölümlerinin ya da Mozart Concerto eserinin ritim teknik nüans müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nb. Schumann gençlik albümünden seçili eserlerin ritim teknik nüans müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nc. Chopin Valse do diyez minör eserlerinin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerlendirme\nd. Czerny opus 849 piyano metodundan seçili etütlerin ritim nota nüans teknik ve müzikalite açılarından doğru şekilde çalınıp çalınmadığını değerle"}]}],"ozet":"Chopin vals, Czerny op. 849, Beethoven ve Mozart konçerto"}]};
+
+/* ================================================================== */
+/* v3: Ders kayıtları, müfredat, materyaller, eserler, öğrenci paneli   */
+/* ================================================================== */
+const EPOSTA_ALANI = "7sanat.com.tr";
+const DOSYA_SINIRI = 25 * 1024 * 1024;
+const MATERYAL_TUR = { nota: { ad: "Nota", ikon: "music", renk: "#fcc522" }, not: { ad: "Ders Notu", ikon: "clipboard", renk: "#60a5fa" } };
+const ESER_DURUM = { calisiliyor: ["Çalışılıyor", "warning"], tamamlandi: ["Tamamlandı", "success"], konser: ["Konserde Çalındı", "violet"] };
+const DEVAM_DURUM = { var: ["Geldi", "success"], yok: ["Gelmedi", "danger"], mazeretli: ["Mazeretli", "warning"] };
+function devamBadge(d) { const x = DEVAM_DURUM[d] || DEVAM_DURUM.yok; return badge(x[1], x[0]); }
+
+/* ---------- Şifre özeti (SHA-256, saf JS — http üzerinde de çalışır) ---------- */
+function sha256(ascii) {
+  const r = (v, a) => (v >>> a) | (v << (32 - a));
+  const bytes = new TextEncoder().encode(ascii);
+  const K = [], H = [];
+  let p = 2;
+  for (let c = 0; c < 64; p++) {
+    let asal = true; for (let i = 2; i * i <= p; i++) if (p % i === 0) { asal = false; break; }
+    if (!asal) continue;
+    if (c < 8) H[c] = (Math.pow(p, 1 / 2) * 4294967296) | 0;
+    K[c++] = (Math.pow(p, 1 / 3) * 4294967296) | 0;
+  }
+  const l = bytes.length, bl = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(bl);
+  m.set(bytes); m[l] = 0x80;
+  const dv = new DataView(m.buffer); dv.setUint32(bl - 4, l * 8);
+  const w = new Array(64);
+  for (let j = 0; j < bl; j += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(j + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  return H.map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+const sifreOzet = (s) => sha256("7sanat|" + s);
+
+/* TC kimlik no doğrulama (resmi algoritma). TC'nin kendisi sistemde saklanmaz. */
+function tcGecerli(tc) {
+  if (!/^[1-9]\d{10}$/.test(tc)) return false;
+  const d = tc.split("").map(Number);
+  const on = ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7 - (d[1] + d[3] + d[5] + d[7])) % 10;
+  const onbir = d.slice(0, 10).reduce((a, b) => a + b, 0) % 10;
+  return ((on + 10) % 10) === d[9] && onbir === d[10];
+}
+/* Öğrenci e-postası: isimsoyisim@7sanat.com.tr — aynı isimde ikinci kişi isimsoyisim2, üçüncü isimsoyisim3 */
+function ogrenciEpostaUret(ad, haricSid) {
+  const kok = slug(ad) || "ogrenci";
+  const dolu = new Set(DB.students.filter(s => s.id !== haricSid && s.hesap).map(s => s.hesap.email));
+  let n = 1, aday = `${kok}@${EPOSTA_ALANI}`;
+  while (dolu.has(aday)) { n++; aday = `${kok}${n}@${EPOSTA_ALANI}`; }
+  return aday;
+}
+function epostaKullaniliyor(email, haricSid) {
+  const e = email.toLowerCase();
+  return DB.personel.some(p => p.email.toLowerCase() === e) || DB.teachers.some(t => (t.email || "").toLowerCase() === e)
+    || DB.students.some(s => s.id !== haricSid && s.hesap && s.hesap.email === e);
+}
+
+/* ---------- Tarih / hafta yardımcıları ---------- */
+function haftaBasi(t) { const d = new Date(t + "T00:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return tarihStr(d); }
+function buHaftaMi(t) { return haftaBasi(t) === haftaBasi(bugun()); }
+function haftaninGunu(gunAdiStr, baz) { const i = HAFTA_GUNLERI.indexOf(gunAdiStr); return i < 0 ? null : tarihEkle(haftaBasi(baz || bugun()), i); }
+
+/* ---------- Müfredat (seviye → hafta → konu) ---------- */
+function mebPiyanoMufredat() { const m = JSON.parse(JSON.stringify(MEB_PIYANO_MUFREDAT)); m.aciklama = "Kaynak: " + m.kaynak; return m; }
+function mufredat(brans) { const m = DB.mufredat && DB.mufredat[brans]; return m && m.seviyeler && m.seviyeler.length ? m : null; }
+function ogrSeviye(s) { const m = mufredat(s.brans); if (!m) return null; const n = s.mufSeviye || 1; return m.seviyeler.find(x => x.no === n) ? n : m.seviyeler[0].no; }
+function seviyeBul(brans, no) { const m = mufredat(brans); return m ? m.seviyeler.find(x => x.no === no) || null : null; }
+function seviyeKonulari(brans, no) { const sv = seviyeBul(brans, no); return sv ? sv.haftalar.flatMap(h => h.konular.map(k => ({ ...k, hafta: h.no }))) : []; }
+function konuAd(brans, id) { const m = mufredat(brans); if (!m) return null; for (const sv of m.seviyeler) for (const h of sv.haftalar) { const k = h.konular.find(x => x.id === id); if (k) return k.ad; } return null; }
+function haftaBaslik(h) { return h.baslik || (h.konular[0] ? h.konular[0].ad : "—"); }
+function ogrenciKayitlari(sid) { return (DB.dersKayitlari || []).filter(k => k.ogrenciler && k.ogrenciler[sid]).sort((a, b) => b.tarih.localeCompare(a.tarih)); }
+function islenenKonular(sid) {
+  const set = new Set();
+  ogrenciKayitlari(sid).forEach(k => { if (k.ogrenciler[sid].durum === "var") (k.konular || []).forEach(id => set.add(id)); });
+  return set;
+}
+function mufredatIlerleme(s) {
+  const no = ogrSeviye(s); if (!no) return null;
+  const tum = seviyeKonulari(s.brans, no); if (!tum.length) return { seviye: no, yuzde: 0, islenen: 0, toplam: 0, siradaki: null };
+  const isl = islenenKonular(s.id);
+  const n = tum.filter(k => isl.has(k.id)).length;
+  const siradaki = seviyeBul(s.brans, no).haftalar.find(h => h.konular.some(k => !isl.has(k.id)));
+  return { seviye: no, yuzde: Math.round((n / tum.length) * 100), islenen: n, toplam: tum.length, siradaki };
+}
+function ilerlemeCubugu(s, kompakt) {
+  const p = mufredatIlerleme(s);
+  if (!p) return kompakt ? "" : `<p class="text-xs text-mut">${esc(s.brans)} için müfredat henüz tanımlı değil.</p>`;
+  return `<div>
+    <div class="flex items-center justify-between text-xs mb-1.5"><span class="text-mut">Müfredat · ${p.seviye}. Seviye</span><span class="text-gold font-medium">%${p.yuzde} · ${p.islenen}/${p.toplam} konu</span></div>
+    <div class="h-2 rounded-full bg-bg overflow-hidden"><div class="h-2 rounded-full bg-gold" style="width:${p.yuzde}%"></div></div>
+    ${!kompakt && p.siradaki ? `<p class="text-xs text-mut mt-1.5">Sıradaki: ${p.siradaki.no}. hafta — ${esc(haftaBaslik(p.siradaki))}</p>` : ""}
+  </div>`;
+}
+function ogrSeviyeAyarla(sid, no) { const s = ogrenci(sid); s.mufSeviye = Number(no); saveDb(); toast(`${s.ad}: müfredat ${no}. seviye olarak ayarlandı.`); render(); }
+
+/* ---------- Veri göçü: v2 → v3 ---------- */
+function goc3(db) {
+  if (db.surumVeri >= 3) return false;
+  const alan = (e) => String(e || "").replace(/@7sanat\.com$/i, "@" + EPOSTA_ALANI);
+  db.personel.forEach(p => p.email = alan(p.email));
+  db.teachers.forEach(t => t.email = alan(t.email));
+  db.mufredat = db.mufredat || { Piyano: mebPiyanoMufredat() };
+  db.dersKayitlari = db.dersKayitlari || [];
+  const eskiDB = DB; DB = db;
+  db.students.forEach((s, i) => {
+    s.eserler = s.eserler || [];
+    if (s.brans === "Piyano" && !s.mufSeviye) s.mufSeviye = s.seviye === "İleri" ? 3 : s.seviye === "Orta" ? 2 : 1;
+    if (!s.hesap) s.hesap = { email: ogrenciEpostaUret(s.ad, s.id), sifreOzet: sifreOzet("123456"), ilkSifre: true, sonGiris: null };
+  });
+  if (DEMO_MODU) demoDersVerisi(db);
+  DB = eskiDB;
+  db.surumVeri = 3;
+  return true;
+}
+function demoDersVerisi(db) {
+  const eserHavuzu = [["Minuet in G", "J. S. Bach"], ["Arabesk Op. 100 No. 2", "F. Burgmüller"], ["Sonatin Op. 36 No. 1", "M. Clementi"], ["Für Elise", "L. v. Beethoven"], ["Etüt Op. 599 No. 12", "C. Czerny"], ["Vals Op. 39 No. 15", "J. Brahms"]];
+  const piyanocular = db.students.filter(s => s.brans === "Piyano" && s.teacherId && s.dersGunu);
+  piyanocular.forEach((s, i) => {
+    const sv = seviyeBul("Piyano", s.mufSeviye || 1) || seviyeBul("Piyano", 1);
+    const hBas = 2 + (i % 5);
+    s.eserler = eserHavuzu.slice(i % 3, i % 3 + 3).map(([ad, besteci], j) => ({ id: yeniId("e"), ad, besteci, durum: ["tamamlandi", "calisiliyor", "calisiliyor"][j], tarih: tarihEkle(bugun(), -40 + j * 14) }));
+    if (i % 4 === 0) s.eserler[0].durum = "konser";
+    [-3, -2, -1, 0].forEach((hafta, hi) => {
+      const tarih = tarihEkle(haftaninGunu(s.dersGunu), hafta * 7);
+      if (tarih > bugun()) return;
+      const durum = (i + hi) % 7 === 3 ? "mazeretli" : "var";
+      const kon = (sv.haftalar[hBas + hi] || sv.haftalar[0]).konular.slice(0, 3).map(k => k.id);
+      const mat = [{ id: yeniId("m"), dosyaId: "demo-nota", ad: "Do Pozisyonu Etüdü.svg", tur: "nota", boyut: 2100, mime: "image/svg+xml" }];
+      if (hi % 2 === 0) mat.push({ id: yeniId("m"), dosyaId: "demo-not", ad: "Ders Notu - Oturuş ve El Pozisyonu.txt", tur: "not", boyut: 420, mime: "text/plain" });
+      const puan = 3 + ((i + hi) % 3);
+      const k = {
+        id: yeniId("dk"), tarih, saat: s.dersSaati, teacherId: s.teacherId, grup: null,
+        ogrenciler: { [s.id]: { durum, puan: durum === "var" ? puan : null } },
+        degerlendirme: durum === "var" ? ["Derse hazırlıklı geldi, parmak pozisyonunda ilerleme var.", "Ritim konusunda biraz zorlandı, evde metronomla çalışmalı.", "Çok keyifli bir dersti; yeni parçaya hızlı başladı.", "Eller birlikte çalarken dikkat dağılıyor, yavaş tempo öneriyorum."][(i + hi) % 4] : "",
+        konular: durum === "var" ? kon : [],
+        islenen: durum === "var" ? "Isınma: 5 parmak egzersizi. Ardından parça çalışması ve yeni konunun anlatımı." : "",
+        odev: durum === "var" ? ["Do pozisyonu etüdünü günde 15 dk, eller ayrı çalış.", "Yeni parçanın ilk 8 ölçüsünü yavaş tempoda çalış.", "Do majör diziyi sağ ve sol elle 5'er kez çal.", "Ritim sayarak 2. satırı ezberle."][(i + hi) % 4] : "",
+        materyaller: durum === "var" ? mat : [],
+        olusturma: tarih + " 19:00", guncelleme: null,
+      };
+      db.dersKayitlari.push(k);
+      s.devam = s.devam.filter(d => d[0] !== tarih); s.devam.push([tarih, durum]); s.devam.sort((a, b) => a[0].localeCompare(b[0]));
+      if (durum === "var") { const hEt = haftaEtiketi(tarih); s.haftalikNotlar = s.haftalikNotlar.filter(n => n[0] !== hEt); s.haftalikNotlar.push([hEt, k.degerlendirme, puan]); }
+    });
+  });
+  // Demo öğrenci hesabı: ilk piyano öğrencisi şifre değiştirmeden girebilsin
+  if (piyanocular[0]) piyanocular[0].hesap.ilkSifre = false;
+}
+
+/* ---------- Dosya yükleme / açma ---------- */
+function dosyaUrl(dosyaId, indir) { return api(`/api/dosya/${encodeURIComponent(dosyaId)}${indir ? "?indir=1" : ""}`); }
+function boyutGoster(b) { if (!b) return ""; return b < 1024 * 1024 ? Math.max(1, Math.round(b / 1024)) + " KB" : (b / 1024 / 1024).toFixed(1) + " MB"; }
+function materyalKutu(m, silinebilir) {
+  const t = MATERYAL_TUR[m.tur] || MATERYAL_TUR.not;
+  return `<div class="flex items-center gap-3 p-3 bg-bg rounded-lg border border-transparent hover:border-gold/30 transition min-w-0">
+    <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background:${t.renk}20;color:${t.renk}">${ikon(t.ikon, "w-4 h-4")}</div>
+    <a href="${esc(dosyaUrl(m.dosyaId))}" target="_blank" rel="noopener" class="min-w-0 flex-1"><p class="text-sm truncate hover:text-gold">${esc(m.ad)}</p><p class="text-[11px] text-mut">${t.ad}${m.boyut ? " · " + boyutGoster(m.boyut) : ""}</p></a>
+    ${silinebilir ? `<button onclick="dkMateryalCikar('${m.id}')" class="text-mut hover:text-red-400" title="Kaldır">${ikon("x", "w-4 h-4")}</button>`
+      : `<a href="${esc(dosyaUrl(m.dosyaId, true))}" class="text-mut hover:text-gold" title="İndir">${ikon("download", "w-4 h-4")}</a>`}
+  </div>`;
+}
+
+/* ================================================================== */
+/* Ders Kaydı penceresi (öğretmen)                                      */
+/* ================================================================== */
+function dersKaydiBul(teacherId, tarih, sids) { return (DB.dersKayitlari || []).find(k => k.teacherId === teacherId && k.tarih === tarih && sids.some(s => k.ogrenciler[s])); }
+function dersKaydiAc(teacherId, tarih, sidsCsv, kayitId) {
+  let k = kayitId ? DB.dersKayitlari.find(x => x.id === kayitId) : null;
+  const sids = k ? Object.keys(k.ogrenciler) : sidsCsv.split(",").filter(Boolean);
+  if (!k) k = dersKaydiBul(teacherId, tarih, sids);
+  const tumSids = k ? [...new Set([...Object.keys(k.ogrenciler), ...sids])] : sids;
+  const durumlar = {}, puanlar = {};
+  tumSids.forEach(sid => {
+    const o = k && k.ogrenciler[sid];
+    const s = ogrenci(sid); const eski = s && (s.devam.find(d => d[0] === (k ? k.tarih : tarih)) || [])[1];
+    durumlar[sid] = o ? o.durum : (eski || null);
+    puanlar[sid] = o ? o.puan : null;
+  });
+  const ilk = ogrenci(tumSids[0]);
+  const p = ilk && mufredatIlerleme(ilk);
+  modalAc({
+    tip: "dersKaydi", teacherId: k ? k.teacherId : teacherId, tarih: k ? k.tarih : tarih, sids: tumSids, kayitId: k ? k.id : null,
+    durumlar, puanlar, telafi: {}, konular: k ? [...(k.konular || [])] : [], materyaller: k ? JSON.parse(JSON.stringify(k.materyaller || [])) : [],
+    seviye: ilk ? ogrSeviye(ilk) : null, acikHafta: p && p.siradaki ? p.siradaki.no : 1, yukleniyor: false,
+    ilkDeger: k ? { degerlendirme: k.degerlendirme, islenen: k.islenen, odev: k.odev } : { degerlendirme: "", islenen: "", odev: "" },
+  });
+}
+function dkUst() { return MODALLAR[MODALLAR.length - 1]; }
+function dkDurum(sid, d) { const m = dkUst(); m.durumlar[sid] = d; if (d !== "var") m.puanlar[sid] = null; render(); }
+function dkHepsiGeldi() { const m = dkUst(); m.sids.forEach(s => m.durumlar[s] = "var"); render(); }
+function dkPuan(sid, p) { const m = dkUst(); m.puanlar[sid] = m.puanlar[sid] === p ? null : p; render(); }
+function dkTelafi(sid) { const m = dkUst(); m.telafi[sid] = !m.telafi[sid]; render(); }
+function dkSeviye(no) { const m = dkUst(); m.seviye = Number(no); m.acikHafta = 1; render(); }
+function dkHafta(no) { const m = dkUst(); m.acikHafta = m.acikHafta === no ? null : no; render(); }
+function dkKonu(id) { const m = dkUst(); const i = m.konular.indexOf(id); if (i >= 0) m.konular.splice(i, 1); else m.konular.push(id); render(); }
+function dkMateryalCikar(id) { const m = dkUst(); m.materyaller = m.materyaller.filter(x => x.id !== id); render(); }
+async function dkMateryalYukle() {
+  const m = dkUst(); const input = document.getElementById("dkDosya"); const tur = val("dkTur");
+  const dosyalar = input ? [...input.files] : [];
+  if (!dosyalar.length) { toast("Önce dosya seçin.", "hata"); return; }
+  if (!SUNUCU) { toast("Dosya yüklemek için sunucuya bağlı olmalısınız (npm start).", "hata"); return; }
+  const buyuk = dosyalar.find(f => f.size > DOSYA_SINIRI);
+  if (buyuk) { toast(`"${buyuk.name}" 25 MB sınırını aşıyor.`, "hata"); return; }
+  m.yukleniyor = true; render();
+  let basarili = 0;
+  for (const f of dosyalar) {
+    try {
+      const r = await fetch(api("/api/dosya"), { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream", "X-Dosya-Adi": encodeURIComponent(f.name) }, body: f });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "yükleme başarısız");
+      m.materyaller.push({ id: yeniId("m"), dosyaId: j.id, ad: f.name, tur, boyut: f.size, mime: f.type, yuklenme: simdi() });
+      basarili++;
+    } catch (e) { toast(`"${f.name}" yüklenemedi: ${e.message}`, "hata"); }
+  }
+  m.yukleniyor = false;
+  const el = document.getElementById("dkDosya"); if (el) el.value = "";
+  if (basarili) toast(`${basarili} dosya eklendi (${MATERYAL_TUR[tur].ad}). Kaydetmeyi unutmayın.`);
+  render();
+}
+function dersKaydiKaydet() {
+  const m = dkUst();
+  const eksik = m.sids.filter(s => !m.durumlar[s]);
+  if (eksik.length) { toast(`Yoklama eksik: ${eksik.map(s => (ogrenci(s) || {}).ad).join(", ")}`, "hata"); return; }
+  const degerlendirme = val("dkDegerlendirme").trim(), islenen = val("dkIslenen").trim(), odev = val("dkOdev").trim();
+  const gelen = m.sids.filter(s => m.durumlar[s] === "var");
+  if (gelen.length && !degerlendirme) { toast("Dersin nasıl geçtiğini kısaca yazın.", "hata"); return; }
+  for (const sid of m.sids) if (m.durumlar[sid] === "mazeretli" && m.telafi[sid] && !val("dkTelafiTarih_" + sid)) { toast("Telafi için önerilen tarih/saati seçin.", "hata"); return; }
+  const t = DB.teachers.find(x => x.id === m.teacherId);
+  const ilkOgr = ogrenci(m.sids[0]);
+  let k = m.kayitId && DB.dersKayitlari.find(x => x.id === m.kayitId);
+  if (!k) { k = { id: yeniId("dk"), olusturma: simdi() }; DB.dersKayitlari.push(k); }
+  Object.assign(k, {
+    tarih: m.tarih, saat: ilkOgr ? ilkOgr.dersSaati : null, teacherId: m.teacherId, grup: t ? t.grup || null : null,
+    ogrenciler: Object.fromEntries(m.sids.map(s => [s, { durum: m.durumlar[s], puan: m.puanlar[s] || null }])),
+    degerlendirme, konular: [...m.konular], islenen, odev, materyaller: m.materyaller, guncelleme: m.kayitId ? simdi() : null,
+  });
+  // Yoklama, haftalık gelişim notu ve telafi taleplerine işle
+  const hEt = haftaEtiketi(m.tarih);
+  m.sids.forEach(sid => {
+    const s = ogrenci(sid); if (!s) return;
+    s.devam = s.devam.filter(d => d[0] !== m.tarih); s.devam.push([m.tarih, m.durumlar[sid]]); s.devam.sort((a, b) => a[0].localeCompare(b[0]));
+    if (m.durumlar[sid] === "var" && (m.puanlar[sid] || degerlendirme)) {
+      s.haftalikNotlar = s.haftalikNotlar.filter(n => n[0] !== hEt);
+      s.haftalikNotlar.push([hEt, degerlendirme, m.puanlar[sid] || 3]);
+    }
+    if (m.durumlar[sid] === "mazeretli" && m.telafi[sid]) {
+      DB.makeupRequests.push({ id: yeniId("m"), studentId: sid, ogretmenId: m.teacherId, dersTarihi: `${m.tarih} ${s.dersSaati || ""}`.trim(), sebep: val("dkTelafiSebep_" + sid).trim() || "Mazeretli devamsızlık", onerilenTarih: datetimeGoster(val("dkTelafiTarih_" + sid)), durum: "beklemede" });
+    }
+  });
+  if (m.sids.length === 1 && m.seviye && ilkOgr && ilkOgr.mufSeviye !== m.seviye && mufredat(ilkOgr.brans)) ilkOgr.mufSeviye = m.seviye;
+  saveDb(); FORM_TEMIZLE = true; MODALLAR.pop();
+  toast(`${tarihTR(m.tarih)} ders kaydı kaydedildi${Object.values(m.telafi).some(Boolean) ? " · telafi talebi sekretere iletildi" : ""}.`);
+  render();
+}
+function dersKaydiSilSor(id) { modalAc({ tip: "onay", tehlike: true, baslik: "Ders kaydı silinsin mi?", mesaj: "Kayıt ve bağlı materyal listesi silinir. Yoklama ve gelişim notları öğrenci kaydında kalır.", buton: "Kaydı sil", aksiyon: `dersKaydiSil('${id}')` }); }
+function dersKaydiSil(id) { DB.dersKayitlari = DB.dersKayitlari.filter(k => k.id !== id); MODALLAR = []; saveDb(); toast("Ders kaydı silindi."); render(); }
+
+function dersKaydiModal(m, z) {
+  const t = DB.teachers.find(x => x.id === m.teacherId);
+  const ogrs = m.sids.map(ogrenci).filter(Boolean);
+  const brans = t ? t.brans : (ogrs[0] || {}).brans;
+  const grup = ogrs.length > 1;
+  const dBtn = (sid, d, ad, renk) => `<button onclick="dkDurum('${sid}','${d}')" class="text-xs px-2.5 py-1.5 rounded-md border transition ${m.durumlar[sid] === d ? renk : "border-line text-mut hover:text-neutral-200"}">${ad}</button>`;
+  const yoklama = ogrs.map(s => `<div class="p-3 bg-bg rounded-lg">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="min-w-0"><p class="text-sm truncate">${esc(s.ad)}</p><p class="text-[11px] text-mut">${esc(s.dersSaati || "")}${s.grup ? " · " + esc(s.grup) : ""}</p></div>
+        <div class="flex gap-1.5">${dBtn(s.id, "var", "Geldi", "bg-green-500/20 border-green-500/50 text-green-300")}${dBtn(s.id, "yok", "Gelmedi", "bg-red-500/20 border-red-500/50 text-red-300")}${dBtn(s.id, "mazeretli", "Mazeretli", "bg-yellow-500/20 border-yellow-500/50 text-yellow-300")}</div>
+      </div>
+      ${m.durumlar[s.id] === "var" ? `<div class="flex items-center gap-2 mt-2.5"><span class="text-[11px] text-mut">Gelişim puanı</span>${[1, 2, 3, 4, 5].map(p => `<button onclick="dkPuan('${s.id}',${p})" class="w-7 h-7 rounded-md text-xs border transition ${m.puanlar[s.id] === p ? "bg-gold text-black border-gold" : m.puanlar[s.id] > p ? "bg-gold/20 border-gold/30 text-gold" : "border-line text-mut hover:text-neutral-200"}">${p}</button>`).join("")}</div>` : ""}
+      ${m.durumlar[s.id] === "mazeretli" ? `<div class="mt-2.5">
+        <label class="inline-flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" ${m.telafi[s.id] ? "checked" : ""} onclick="dkTelafi('${s.id}')" class="accent-[#fcc522]" /> Telafi dersi talebi oluştur</label>
+        ${m.telafi[s.id] ? `<div class="grid sm:grid-cols-2 gap-2 mt-2"><input id="dkTelafiTarih_${s.id}" type="datetime-local" class="${INP} !py-1.5" /><input id="dkTelafiSebep_${s.id}" placeholder="Mazeret (örn. hastalık)" class="${INP} !py-1.5" /></div>` : ""}
+      </div>` : ""}
+    </div>`).join("");
+
+  const muf = mufredat(brans);
+  const oncekiler = new Set(); ogrs.forEach(s => islenenKonular(s.id).forEach(id => oncekiler.add(id)));
+  const sv = muf ? (seviyeBul(brans, m.seviye) || muf.seviyeler[0]) : null;
+  const mufHtml = !muf ? `<p class="text-xs text-mut">${esc(brans || "")} branşı için müfredat henüz tanımlı değil. İşlenenleri aşağıdaki alana yazabilirsiniz.</p>` : `
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <select onchange="dkSeviye(this.value)" class="${INP} !w-auto !py-1.5">${muf.seviyeler.map(x => `<option value="${x.no}" ${x.no === sv.no ? "selected" : ""}>${x.no}. Seviye</option>`).join("")}</select>
+      <span class="text-[11px] text-mut flex-1 min-w-[160px]">${esc(sv.ozet || "")}</span>
+    </div>
+    ${m.konular.length ? `<div class="flex flex-wrap gap-1.5 mb-3">${m.konular.map(id => `<button onclick="dkKonu('${id}')" class="text-xs px-2 py-1 rounded-md bg-gold/15 text-gold border border-gold/30 inline-flex items-center gap-1 text-left">${esc(konuAd(brans, id) || id)} ${ikon("x", "w-3 h-3")}</button>`).join("")}</div>` : ""}
+    <div class="space-y-1.5 max-h-80 overflow-y-auto pr-1">${sv.haftalar.map(h => {
+      const secili = h.konular.filter(k => m.konular.includes(k.id)).length, once = h.konular.filter(k => oncekiler.has(k.id)).length;
+      const acik = m.acikHafta === h.no;
+      return `<div class="rounded-lg border ${acik ? "border-gold/30 bg-bg" : "border-line"}">
+        <button onclick="dkHafta(${h.no})" class="w-full flex items-center justify-between gap-2 px-3 py-2 text-left">
+          <span class="text-sm min-w-0 truncate"><span class="text-mut">${h.no}. hafta ·</span> ${esc(haftaBaslik(h))}${h.konular.length > 1 ? ` <span class="text-mut text-xs">+${h.konular.length - 1}</span>` : ""}</span>
+          <span class="flex items-center gap-2 shrink-0">${secili ? badge("gold", secili + " seçili") : ""}${h.konular.length && once === h.konular.length ? badge("success", "✓") : once ? `<span class="text-[11px] text-mut">${once}/${h.konular.length}</span>` : ""}<span class="text-mut">${acik ? "−" : "+"}</span></span>
+        </button>
+        ${acik ? `<div class="px-3 pb-3 space-y-1.5">${h.konular.map(k => { const se = m.konular.includes(k.id); return `<button onclick="dkKonu('${k.id}')" class="w-full flex items-start gap-2 text-left p-2 rounded-md border transition ${se ? "bg-gold/15 border-gold/50" : "border-line hover:bg-accent"}">
+            <span class="w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center ${se ? "bg-gold border-gold text-black" : "border-neutral-600"}">${se ? ikon("check", "w-3 h-3") : ""}</span>
+            <span class="min-w-0"><span class="text-sm ${se ? "text-gold" : ""}">${esc(k.ad)}</span>${oncekiler.has(k.id) && !se ? ' <span class="text-[11px] text-green-400">· daha önce işlendi</span>' : ""}${k.detay ? `<span class="block text-[11px] text-mut mt-0.5 line-clamp-2 whitespace-pre-line">${esc(k.detay)}</span>` : ""}</span></button>`; }).join("") || '<p class="text-xs text-mut">Bu haftada konu yok.</p>'}</div>` : ""}
+      </div>`; }).join("")}</div>`;
+
+  const bolum = (no, baslik, alt, ic) => `<div class="pt-5 mt-5 border-t border-line first:mt-0 first:pt-0 first:border-0">
+    <p class="text-sm font-medium flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-gold/15 text-gold text-[11px] flex items-center justify-center">${no}</span>${baslik}</p>
+    ${alt ? `<p class="text-xs text-mut mt-0.5 mb-3">${alt}</p>` : '<div class="mb-3"></div>'}${ic}</div>`;
+
+  return modalKabuk(`${modalBaslik(`Ders Kaydı · ${t ? esc(t.brans) + (t.grup ? " · " + t.grup : "") : ""}`, `${tarihTR(m.tarih)} ${gunAdi(m.tarih)}${grup ? ` — ${ogrs.length} öğrenci` : ` — ${ogrs[0] ? ogrs[0].ad : ""}`}`)}
+    <div class="p-5 max-h-[70vh] overflow-y-auto">
+      ${bolum(1, "Yoklama", grup ? `<button onclick="dkHepsiGeldi()" class="${BTN.s} mt-1">Hepsi geldi</button>` : "Mazeretli seçilirse telafi talebi de oluşturabilirsiniz.", `<div class="space-y-2">${yoklama}</div>`)}
+      ${bolum(2, "Ders nasıl geçti?", "Veli ve öğrenci bu değerlendirmeyi görür.", `<textarea id="dkDegerlendirme" rows="3" placeholder="Örn: Derse hazırlıklı geldi, ritimde ilerleme var..." class="${INP}">${esc(m.ilkDeger.degerlendirme)}</textarea>`)}
+      ${bolum(3, "Müfredattan işlenen konular", "Haftaya dokunup bu derste işlenen konuları seçin.", mufHtml)}
+      ${bolum(4, "Derste neler yapıldı?", "Müfredat dışında işlenenler, çalışılan parçalar vb.", `<textarea id="dkIslenen" rows="2" class="${INP}">${esc(m.ilkDeger.islenen)}</textarea>`)}
+      ${bolum(5, "Haftalık ödev / çalışma görevi", "Öğrenci kendi panelinde görür.", `<textarea id="dkOdev" rows="2" placeholder="Örn: 2. etüdü günde 15 dk, eller ayrı çalış." class="${INP}">${esc(m.ilkDeger.odev)}</textarea>`)}
+      ${bolum(6, "Ders materyalleri", "Her format yüklenebilir (en fazla 25 MB). Türünü seçip dosyayı ekleyin.", `
+        <div class="flex flex-col sm:flex-row gap-2">
+          <select id="dkTur" class="${INP} sm:!w-40"><option value="nota">Nota</option><option value="not">Ders Notu</option></select>
+          <input id="dkDosya" type="file" multiple class="${INP} !py-1.5 file:mr-3 file:rounded-md file:border-0 file:bg-soft file:text-neutral-200 file:px-3 file:py-1" />
+          <button onclick="dkMateryalYukle()" ${m.yukleniyor ? "disabled" : ""} class="${BTN.s} !text-sm !px-4 shrink-0">${ikon("plus", "w-3.5 h-3.5")} ${m.yukleniyor ? "Yükleniyor..." : "Ekle"}</button>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-2 mt-3">${m.materyaller.map(x => materyalKutu(x, true)).join("") || '<p class="text-xs text-mut">Henüz materyal eklenmedi.</p>'}</div>`)}
+    </div>
+    <div class="flex items-center justify-between gap-2 p-4 border-t border-line">
+      ${m.kayitId ? `<button onclick="dersKaydiSilSor('${m.kayitId}')" class="${BTN.d}">${ikon("trash", "w-3.5 h-3.5")} Sil</button>` : "<span></span>"}
+      <div class="flex gap-2"><button onclick="modalKapat()" class="${BTN.s} !text-sm !px-4 !py-2">Vazgeç</button><button onclick="dersKaydiKaydet()" ${m.yukleniyor ? "disabled" : ""} class="${BTN.p}">${ikon("check")} Kaydet</button></div>
+    </div>`, "max-w-3xl", z);
+}
+
+/* ---------- Öğretmen sayfaları ---------- */
+function teacherAttendanceHtml(ogrenciler) {
+  const t = benimOgretmen();
+  const gun = gunAdi(YOKLAMA_TARIH);
+  const liste = ogrenciler.filter(s => s.dersGunu === gun).sort((a, b) => (a.dersSaati || "").localeCompare(b.dersSaati || ""));
+  const durumYazi = (k) => k ? `<span class="text-xs text-green-400 inline-flex items-center gap-1">${ikon("check", "w-3.5 h-3.5")} Kaydedildi</span>` : `<span class="text-xs text-orange-400">Kayıt bekliyor</span>`;
+  let govde;
+  if (!liste.length) govde = bos("Bu tarihte planlı dersiniz bulunmuyor.");
+  else if (t && t.grup) {
+    const k = dersKaydiBul(t.id, YOKLAMA_TARIH, liste.map(s => s.id));
+    govde = `<div onclick="dersKaydiAc('${t.id}','${YOKLAMA_TARIH}','${liste.map(s => s.id).join(",")}')" class="p-4 bg-bg rounded-xl border border-line hover:border-gold/40 cursor-pointer transition">
+      <div class="flex items-center justify-between gap-3"><div><p class="font-medium">${esc(t.grup)} · ${esc(t.brans)}</p><p class="text-xs text-mut">${esc(liste[0].dersSaati || "")} · ${liste.length} öğrenci</p></div>${durumYazi(k)}</div>
+      <div class="flex flex-wrap gap-1.5 mt-3">${liste.map(s => { const d = k && k.ogrenciler[s.id] ? k.ogrenciler[s.id].durum : null; return `<span class="text-xs px-2 py-1 rounded-md bg-card border border-line">${esc(s.ad)}${d ? " · " + DEVAM_DURUM[d][0] : ""}</span>`; }).join("")}</div>
+      <button class="${BTN.p} mt-4">${ikon("clipboard")} ${k ? "Ders Kaydını Düzenle" : "Yoklama & Ders Kaydı Gir"}</button></div>`;
+  } else {
+    govde = `<div class="space-y-2">${liste.map(s => { const k = dersKaydiBul(s.teacherId, YOKLAMA_TARIH, [s.id]); const d = k ? k.ogrenciler[s.id].durum : null;
+      return satir(`<div class="min-w-0"><p class="text-sm">${esc(s.ad)}</p><p class="text-xs text-mut">${esc(s.dersSaati || "")} · ${esc(s.seviye)}</p></div>`,
+        `<div class="flex items-center gap-3">${d ? devamBadge(d) : ""}${durumYazi(k)}<span class="text-mut">${ikon("edit", "w-4 h-4")}</span></div>`,
+        `dersKaydiAc('${s.teacherId}','${YOKLAMA_TARIH}','${s.id}')`); }).join("")}</div>`;
+  }
+  const disarida = ogrenciler.filter(s => !liste.includes(s));
+  return `${sayfaBaslik("Yoklama &", "Ders Kaydı", "Öğrenciye dokunun: yoklama, değerlendirme, müfredat, ödev ve materyaller tek pencerede")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    ${card(`
+      <div class="flex flex-wrap items-end gap-3 mb-1">
+        <div>${lbl("Ders Tarihi")}<input id="yoklamaTarihi" type="date" value="${YOKLAMA_TARIH}" onchange="durumSet('YOKLAMA_TARIH', this.value)" class="${INP} !w-auto" /></div>
+        <button onclick="durumSet('YOKLAMA_TARIH','${bugun()}')" class="${BTN.s} mb-0.5">Bugün</button>
+      </div>
+      <p class="text-xs text-mut mb-4">${esc(gun)} günü için planlı ${liste.length} öğrenci.</p>
+      ${govde}`, "xl:col-span-2")}
+    ${card(`${cardBaslik("plus", "Programda Olmayan Ders")}
+      <p class="text-xs text-mut mb-3">Telafi veya ek ders için seçili tarihe kayıt açın.</p>
+      ${disarida.length ? `<select id="ekDersOgr" class="${INP} mb-3">${disarida.map(s => `<option value="${s.id}">${esc(s.ad)}</option>`).join("")}</select>
+      <button onclick="dersKaydiAc('${t ? t.id : ""}','${YOKLAMA_TARIH}', val('ekDersOgr'))" class="${BTN.s} !text-sm !px-4 !py-2">Ders Kaydı Aç</button>` : '<p class="text-xs text-mut">Tüm öğrencileriniz bu günün programında.</p>'}`, "self-start")}
+  </div>`;
+}
+function teacherRecordsHtml(ogrenciler) {
+  const t = benimOgretmen();
+  const kayitlar = (DB.dersKayitlari || []).filter(k => k.teacherId === t.id).sort((a, b) => b.tarih.localeCompare(a.tarih));
+  return `${sayfaBaslik("Ders", "Kayıtları", `${kayitlar.length} kayıt — düzenlemek için dokunun`)}
+  <div class="space-y-3">${kayitlar.map(k => dersKaydiKarti(k, { tik: `dersKaydiAc('${k.teacherId}','${k.tarih}','',  '${k.id}')`, ogretmenGorunumu: true })).join("") || card(bos("Henüz ders kaydı girmediniz."))}</div>`;
+}
+function dersKaydiKarti(k, o) {
+  o = o || {};
+  const t = DB.teachers.find(x => x.id === k.teacherId);
+  const brans = t ? t.brans : "";
+  const sids = Object.keys(k.ogrenciler);
+  const tekSid = o.sid;
+  const d = tekSid && k.ogrenciler[tekSid];
+  return `<div ${o.tik ? `onclick="${o.tik}"` : ""} class="bg-card rounded-xl border border-line p-4 sm:p-5 ${o.tik ? "cursor-pointer hover:border-gold/30" : ""} transition">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div><p class="font-medium">${tarihTR(k.tarih)} <span class="text-mut font-normal">· ${esc(gunAdi(k.tarih))}${k.saat ? " " + esc(k.saat) : ""}</span></p>
+        <p class="text-xs text-mut mt-0.5">${o.ogretmenGorunumu ? (sids.length > 1 ? `${esc(k.grup || "Grup")} · ${sids.length} öğrenci` : esc((ogrenci(sids[0]) || {}).ad || "")) : esc(t ? t.ad : "")}</p></div>
+      <div class="flex flex-wrap items-center gap-1.5">${d ? devamBadge(d.durum) : ""}${d && d.puan ? puanNoktalari(d.puan) : ""}
+        ${o.ogretmenGorunumu ? Object.entries(Object.values(k.ogrenciler).reduce((a, x) => { a[x.durum] = (a[x.durum] || 0) + 1; return a; }, {})).map(([dd, n]) => badge(DEVAM_DURUM[dd][1], `${n} ${DEVAM_DURUM[dd][0].toLowerCase()}`)).join("") : ""}</div>
+    </div>
+    ${k.degerlendirme ? `<p class="text-sm mt-3">${esc(k.degerlendirme)}</p>` : ""}
+    ${(k.konular || []).length ? `<div class="flex flex-wrap gap-1.5 mt-3">${k.konular.map(id => `<span class="text-[11px] px-2 py-0.5 rounded bg-gold/10 text-gold">${esc(konuAd(brans, id) || id)}</span>`).join("")}</div>` : ""}
+    ${k.islenen ? `<p class="text-xs text-mut mt-2">${esc(k.islenen)}</p>` : ""}
+    ${k.odev ? `<div class="mt-3 p-3 rounded-lg bg-gold/5 border border-gold/20 text-sm"><span class="text-gold text-xs font-medium block mb-0.5">Ödev</span>${esc(k.odev)}</div>` : ""}
+    ${(k.materyaller || []).length ? (o.ogretmenGorunumu ? `<p class="text-xs text-mut mt-3 flex items-center gap-1">${ikon("download", "w-3.5 h-3.5")} ${k.materyaller.length} materyal</p>` : `<div class="grid sm:grid-cols-2 gap-2 mt-3" onclick="event.stopPropagation()">${k.materyaller.map(x => materyalKutu(x)).join("")}</div>`) : ""}
+  </div>`;
+}
+
+/* ---------- Eserler (repertuvar) ---------- */
+function eserAc(sid) { modalAc({ tip: "eserler", sid }); }
+function eserEkle(sid) {
+  const s = ogrenci(sid); const ad = val("eserAd").trim(), besteci = val("eserBesteci").trim();
+  if (!ad) { toast("Eser adını yazın.", "hata"); return; }
+  s.eserler = s.eserler || [];
+  s.eserler.unshift({ id: yeniId("e"), ad, besteci, durum: val("eserDurum") || "calisiliyor", tarih: bugun() });
+  saveDb(); FORM_TEMIZLE = true; toast("Eser eklendi."); render();
+}
+function eserDurum(sid, eid, d) { const e = (ogrenci(sid).eserler || []).find(x => x.id === eid); if (e) { e.durum = d; e.tarih = bugun(); saveDb(); render(); } }
+function eserSil(sid, eid) { const s = ogrenci(sid); s.eserler = s.eserler.filter(x => x.id !== eid); saveDb(); render(); }
+function eserListesi(s, duzenlenebilir) {
+  const liste = s.eserler || [];
+  if (!liste.length) return bos("Henüz eser eklenmedi.");
+  return `<div class="space-y-2">${liste.map(e => satir(`<div class="min-w-0"><p class="text-sm truncate">${esc(e.ad)}</p><p class="text-xs text-mut">${esc(e.besteci || "—")} · ${tarihTR(e.tarih)}</p></div>`,
+    duzenlenebilir ? `<div class="flex items-center gap-2"><select onchange="eserDurum('${s.id}','${e.id}', this.value)" class="${INP} !w-auto !py-1 !text-xs">${Object.entries(ESER_DURUM).map(([k, [a]]) => `<option value="${k}" ${e.durum === k ? "selected" : ""}>${a}</option>`).join("")}</select><button onclick="eserSil('${s.id}','${e.id}')" class="text-mut hover:text-red-400">${ikon("trash", "w-4 h-4")}</button></div>`
+      : badge(ESER_DURUM[e.durum][1], ESER_DURUM[e.durum][0]))).join("")}</div>`;
+}
+function eserModal(m, z) {
+  const s = ogrenci(m.sid); if (!s) return "";
+  return modalKabuk(`${modalBaslik("Çaldığı Eserler", s.ad)}
+    <div class="p-5 max-h-[70vh] overflow-y-auto">
+      <div class="grid sm:grid-cols-[1fr_1fr_auto_auto] gap-2 mb-5">
+        <input id="eserAd" placeholder="Eser adı" class="${INP}" /><input id="eserBesteci" placeholder="Besteci" class="${INP}" />
+        <select id="eserDurum" class="${INP} sm:!w-auto">${Object.entries(ESER_DURUM).map(([k, [a]]) => `<option value="${k}">${a}</option>`).join("")}</select>
+        <button onclick="eserEkle('${s.id}')" class="${BTN.p}">${ikon("plus")} Ekle</button>
+      </div>
+      ${eserListesi(s, true)}
+    </div>`, "max-w-2xl", z);
+}
+function teacherStudentsHtml(ogrenciler) {
+  return `${sayfaBaslik("Öğrencilerim", "", `${ogrenciler.length} öğrenci`)}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${ogrenciler.map(s => { const oran = devamOrani(s.devam); const son = ogrenciKayitlari(s.id)[0]; const cal = (s.eserler || []).filter(e => e.durum === "calisiliyor"); return card(`
+    <div class="flex items-center justify-between mb-1"><p class="font-medium">${esc(s.ad)}</p>${oran === null ? "" : badge(oran >= 90 ? "success" : oran >= 75 ? "warning" : "danger", "%" + oran)}</div>
+    <p class="text-xs text-mut mb-3">${s.yas} yaş · ${esc(s.seviye)} · ${s.dersGunu ? esc(s.dersGunu + " " + s.dersSaati) : "ders saati yok"}</p>
+    ${ilerlemeCubugu(s, true)}
+    <div class="mt-3">${devamSeridi(s.devam)}</div>
+    ${son ? `<div class="mt-3 p-2.5 bg-bg rounded-lg"><p class="text-[11px] text-mut mb-0.5">Son ders · ${tarihTR(son.tarih)}</p><p class="text-xs line-clamp-2">${esc(son.odev ? "Ödev: " + son.odev : son.degerlendirme || "—")}</p></div>` : ""}
+    <p class="text-xs text-mut mt-3">Çalışılan: ${cal.length ? esc(cal.map(e => e.ad).join(", ")) : "—"}</p>
+    <div class="flex gap-2 mt-3"><button onclick="eserAc('${s.id}')" class="${BTN.s}">${ikon("music", "w-3.5 h-3.5")} Eserler</button><button onclick="ogrenciDersleriAc('${s.id}')" class="${BTN.s}">${ikon("clipboard", "w-3.5 h-3.5")} Ders Geçmişi</button></div>`); }).join("") || card(bos("Atanmış öğrenci yok."))}</div>`;
+}
+function ogrenciDersleriAc(sid) { modalAc({ tip: "ogrDersGecmis", sid }); }
+function ogrDersGecmisModal(m, z) {
+  const s = ogrenci(m.sid); if (!s) return "";
+  const kayitlar = ogrenciKayitlari(s.id);
+  return modalKabuk(`${modalBaslik("Ders Geçmişi", s.ad)}<div class="p-5 max-h-[70vh] overflow-y-auto space-y-3">
+    <div class="p-4 bg-bg rounded-lg">${ilerlemeCubugu(s)}</div>
+    ${kayitlar.map(k => dersKaydiKarti(k, { sid: s.id })).join("") || bos("Henüz ders kaydı yok.")}</div>`, "max-w-3xl", z);
+}
+
+/* ================================================================== */
+/* Öğrenci hesabı (sekreter / yönetici)                                 */
+/* ================================================================== */
+function ogrenciHesapKutusu(s) {
+  const h = s.hesap;
+  return `<div class="p-4 rounded-lg border border-line bg-bg mt-4">
+    <p class="text-sm font-medium flex items-center gap-2 mb-3">${ikon("key")} Öğrenci Paneli Girişi</p>
+    ${h ? `<div class="grid sm:grid-cols-2 gap-3 text-xs">
+        <div><p class="text-mut mb-1">E-posta</p><div class="flex gap-2"><input id="hsEmail" value="${esc(h.email)}" class="${INP} !py-1.5 font-mono" /><button onclick="hesapEpostaKaydet('${s.id}')" class="${BTN.s}">Kaydet</button></div></div>
+        <div><p class="text-mut mb-1">Durum</p><p class="text-sm">${h.ilkSifre ? badge("warning", "İlk şifre — giriş bekleniyor") : badge("success", "Aktif")}${h.sonGiris ? `<span class="text-mut ml-2">son giriş ${tarihTR(h.sonGiris)}</span>` : ""}</p></div>
+      </div>` : '<p class="text-xs text-mut mb-2">Bu öğrencinin panel hesabı yok.</p>'}
+    <div class="flex flex-wrap items-end gap-2 mt-3">
+      <div class="flex-1 min-w-[180px]">${lbl(h ? "Şifreyi sıfırla — öğrencinin TC kimlik no'su" : "Hesap oluştur — öğrencinin TC kimlik no'su")}<input id="hsTC" inputmode="numeric" maxlength="11" placeholder="11 haneli TC" class="${INP} !py-1.5 font-mono" /></div>
+      <button onclick="hesapSifreSifirla('${s.id}')" class="${BTN.s} !py-2">${h ? "Şifreyi Sıfırla" : "Hesap Oluştur"}</button>
+    </div>
+    <p class="text-[11px] text-mut mt-2">İlk şifre TC'nin ilk 6 hanesidir; öğrenci ilk girişte kendi şifresini belirler. TC numarası sistemde saklanmaz.</p>
+  </div>`;
+}
+function hesapEpostaKaydet(sid) {
+  const s = ogrenci(sid); const e = val("hsEmail").trim().toLowerCase();
+  if (!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(e)) { toast("Geçerli bir e-posta girin.", "hata"); return; }
+  if (epostaKullaniliyor(e, sid)) { toast("Bu e-posta başka bir hesapta kullanılıyor.", "hata"); return; }
+  s.hesap.email = e; saveDb(); toast("Öğrenci e-postası güncellendi."); render();
+}
+function hesapSifreSifirla(sid) {
+  const s = ogrenci(sid); const tc = sadeceRakam(val("hsTC"));
+  if (!tcGecerli(tc)) { toast("Geçerli bir TC kimlik numarası girin.", "hata"); return; }
+  if (!s.hesap) s.hesap = { email: ogrenciEpostaUret(s.ad, s.id), sonGiris: null };
+  s.hesap.sifreOzet = sifreOzet(tc.slice(0, 6)); s.hesap.ilkSifre = true;
+  saveDb(); FORM_TEMIZLE = true; toast(`Şifre sıfırlandı. Giriş: ${s.hesap.email} · ilk şifre TC'nin ilk 6 hanesi.`); render();
+}
+function yeniOgrenciEpostaOner() { const el = document.getElementById("yeniOgrEmail"); if (el && !el.dataset.elle) el.value = ogrenciEpostaUret(val("yeniAd").trim() || ""); }
+
+/* ---------- Öğrenci girişi: ilk şifre değiştirme ---------- */
+let SIFRE_HATA = "";
+function sifreDegistirHtml() {
+  return `<div class="min-h-screen flex flex-col items-center justify-center px-4 py-10 pt-safe">
+    <div class="w-16 h-16 rounded-2xl bg-gold/20 text-gold flex items-center justify-center mb-4">${ikon("key", "w-8 h-8")}</div>
+    <form onsubmit="event.preventDefault(); ilkSifreKaydet(); return false;" class="w-full max-w-md bg-card border border-line rounded-xl p-6">
+      <h2 class="font-display text-xl font-semibold">Hoş geldin, ${esc(USER.ad.split(" ")[0])}!</h2>
+      <p class="text-xs text-mut mt-1 mb-5">İlk girişin. Güvenliğin için kendine yeni bir şifre belirle (en az 6 karakter).</p>
+      ${lbl("Yeni şifre")}<input id="ysSifre" type="password" autocomplete="new-password" class="${INP} py-2.5 mb-3" />
+      ${lbl("Yeni şifre (tekrar)")}<input id="ysSifre2" type="password" autocomplete="new-password" class="${INP} py-2.5" />
+      ${SIFRE_HATA ? `<p class="text-xs text-red-400 mt-3">${esc(SIFRE_HATA)}</p>` : ""}
+      <button type="submit" class="${BTN.p} w-full mt-5 py-2.5">Şifremi Kaydet</button>
+      <button type="button" onclick="cikisYap()" class="${BTN.g} w-full mt-2">Çıkış</button>
+    </form></div>`;
+}
+function ilkSifreKaydet() {
+  const a = val("ysSifre"), b = val("ysSifre2"); const s = ogrenci(USER.studentId);
+  SIFRE_HATA = "";
+  if (a.length < 6) SIFRE_HATA = "Şifre en az 6 karakter olmalı.";
+  else if (a !== b) SIFRE_HATA = "Şifreler aynı değil.";
+  else if (sifreOzet(a) === s.hesap.sifreOzet) SIFRE_HATA = "Yeni şifre ilk şifreyle aynı olamaz.";
+  else if (/^\d{6}$/.test(a)) SIFRE_HATA = "Sadece 6 rakamdan oluşan şifre olmaz; harf de ekle.";
+  if (SIFRE_HATA) { render(); return; }
+  s.hesap.sifreOzet = sifreOzet(a); s.hesap.ilkSifre = false; s.hesap.sonGiris = simdi();
+  USER.sifreDegistir = false; oturumAc(USER); saveDb(); FORM_TEMIZLE = true; toast("Şifren kaydedildi. Hoş geldin!"); render();
+}
+
+/* ================================================================== */
+/* Öğrenci paneli                                                       */
+/* ================================================================== */
+let MAT_FILTRE = "hepsi";
+function benimOgrenci() { return ogrenci(USER.studentId); }
+function ogrenciPanelHtml() {
+  const s = benimOgrenci(); if (!s) return card(bos("Öğrenci kaydı bulunamadı."));
+  const map = { buhafta: ogrBuHaftaHtml, eserler: ogrEserlerHtml, notlar: ogrNotlarHtml, kart: ogrKartimHtml, materyaller: ogrMateryallerHtml, program: ogrProgramHtml };
+  return (map[TABS.ogrenci] || ogrBuHaftaHtml)(s);
+}
+function sonrakiDers(s) {
+  if (!s.dersGunu) return null;
+  let t = haftaninGunu(s.dersGunu);
+  if (t < bugun() || (t === bugun() && ogrenciKayitlari(s.id).some(k => k.tarih === t))) t = tarihEkle(t, 7);
+  return t;
+}
+function ogrBuHaftaHtml(s) {
+  const kayitlar = ogrenciKayitlari(s.id);
+  const buHafta = kayitlar.filter(k => buHaftaMi(k.tarih));
+  const oncekiBas = tarihEkle(haftaBasi(bugun()), -7);
+  const gecen = kayitlar.filter(k => haftaBasi(k.tarih) === oncekiBas);
+  const sonraki = sonrakiDers(s);
+  const odev = ([...buHafta, ...gecen].find(k => k.odev) || {}).odev;
+  const kart = s.kartNo && kartBul(s.kartNo);
+  const kayitBlok = (k) => {
+    const d = k.ogrenciler[s.id];
+    return card(`<div class="flex flex-wrap items-center justify-between gap-2 mb-3"><p class="font-medium">${tarihTR(k.tarih)} · ${esc(gunAdi(k.tarih))}</p><div class="flex items-center gap-2">${devamBadge(d.durum)}${d.puan ? puanNoktalari(d.puan) : ""}</div></div>
+      ${d.durum !== "var" ? `<p class="text-sm text-mut">${d.durum === "mazeretli" ? "Bu derse mazeretli olarak katılamadın." : "Bu derse katılmadın."} Kaçırdığın konuları öğretmeninle konuşabilirsin.</p>` : ""}
+      ${(k.materyaller || []).length ? `<p class="text-xs text-mut mb-2">Bu dersin materyalleri</p><div class="grid sm:grid-cols-2 gap-2 mb-4">${k.materyaller.map(x => materyalKutu(x)).join("")}</div>` : ""}
+      ${(k.konular || []).length ? `<p class="text-xs text-mut mb-1.5">İşlenen konular</p><div class="flex flex-wrap gap-1.5 mb-3">${k.konular.map(id => `<span class="text-xs px-2 py-1 rounded bg-gold/10 text-gold">${esc(konuAd(s.brans, id) || id)}</span>`).join("")}</div>` : ""}
+      ${k.degerlendirme ? `<p class="text-xs text-mut mb-1">Öğretmeninin notu</p><p class="text-sm mb-2">${esc(k.degerlendirme)}</p>` : ""}
+      ${k.islenen ? `<p class="text-xs text-mut">${esc(k.islenen)}</p>` : ""}`);
+  };
+  return `${sayfaBaslik("Merhaba,", s.ad.split(" ")[0], `${s.brans}${s.grup ? " · " + s.grup : ""} · ${ogretmenAd(s.teacherId) || "öğretmen ataması bekleniyor"}`)}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="xl:col-span-2 space-y-4">
+      ${odev ? `<div class="p-5 rounded-xl border border-gold/30 bg-gold/5"><p class="text-xs uppercase tracking-wider text-gold mb-1 flex items-center gap-2">${ikon("clipboard", "w-3.5 h-3.5")} Bu haftaki ödevin</p><p class="text-base">${esc(odev)}</p></div>` : ""}
+      <p class="text-xs uppercase tracking-wider text-mut">Bu hafta</p>
+      ${buHafta.map(kayitBlok).join("") || card(`<p class="text-sm text-mut">Bu hafta henüz ders kaydı yok.${sonraki ? ` Sıradaki dersin <span class="text-neutral-100">${tarihTR(sonraki)} ${esc(gunAdi(sonraki))} ${esc(s.dersSaati || "")}</span>.` : ""}</p>`)}
+      ${gecen.length ? `<details class="bg-card rounded-xl border border-line group">
+        <summary class="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-sm"><span class="text-mut">Geçen hafta · ${tarihTR(gecen[0].tarih)}</span><span class="text-xs text-mut">${gecen.reduce((a, k) => a + (k.materyaller || []).length, 0)} materyal <span class="group-open:hidden">+</span><span class="hidden group-open:inline">−</span></span></summary>
+        <div class="px-4 pb-4 space-y-2">${gecen.map(k => `${k.odev ? `<p class="text-xs"><span class="text-gold">Ödev:</span> ${esc(k.odev)}</p>` : ""}<div class="grid sm:grid-cols-2 gap-2">${(k.materyaller || []).map(x => materyalKutu(x)).join("")}</div>`).join("")}
+          <button onclick="setTab('materyaller')" class="${BTN.g} !px-0">Tüm materyaller →</button></div>
+      </details>` : ""}
+    </div>
+    <div class="space-y-4">
+      ${card(ilerlemeCubugu(s))}
+      ${card(`<div class="space-y-2">${satir('<span class="text-sm text-mut">Sıradaki ders</span>', `<span class="text-sm">${sonraki ? tarihTR(sonraki) + " " + esc(s.dersSaati || "") : "Planlanıyor"}</span>`)}
+        ${satir('<span class="text-sm text-mut">Devam</span>', `<span class="text-sm">${devamOrani(s.devam) === null ? "-" : "%" + devamOrani(s.devam)}</span>`, "setTab('program')")}
+        ${satir('<span class="text-sm text-mut">Çalıştığım eser</span>', `<span class="text-sm truncate max-w-[55%]">${esc(((s.eserler || []).find(e => e.durum === "calisiliyor") || {}).ad || "-")}</span>`, "setTab('eserler')")}
+        ${kart ? satir('<span class="text-sm text-mut">Kart bakiyem</span>', `<span class="text-sm text-gold">${TL(kartBakiye(kart.no))}</span>`, "setTab('kart')") : ""}</div>`)}
+    </div>
+  </div>`;
+}
+function ogrMateryallerHtml(s) {
+  const kayitlar = ogrenciKayitlari(s.id).filter(k => (k.materyaller || []).length);
+  const tum = kayitlar.flatMap(k => k.materyaller);
+  const say = (t) => tum.filter(x => x.tur === t).length;
+  const gruplar = kayitlar.map(k => ({ k, m: k.materyaller.filter(x => MAT_FILTRE === "hepsi" || x.tur === MAT_FILTRE) })).filter(g => g.m.length);
+  return `${sayfaBaslik("Materyaller", "", "Öğretmeninin yüklediği notalar ve ders notları")}
+  <div class="mb-4">${chipler("MAT_FILTRE", MAT_FILTRE, [["hepsi", "Tümü", tum.length], ["nota", "Notalar", say("nota")], ["not", "Ders Notları", say("not")]])}</div>
+  <div class="space-y-5">${gruplar.map(({ k, m }) => `<div><p class="text-xs text-mut mb-2">${esc(haftaEtiketi(k.tarih))} · ${tarihTR(k.tarih)}${buHaftaMi(k.tarih) ? " " + badge("gold", "bu hafta") : ""}</p>
+    <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">${m.map(x => materyalKutu(x)).join("")}</div></div>`).join("") || card(bos("Henüz materyal yok."))}</div>`;
+}
+function ogrEserlerHtml(s) {
+  const grup = (d) => (s.eserler || []).filter(e => e.durum === d);
+  return `${sayfaBaslik("Çaldığım", "Eserler", `${(s.eserler || []).length} eser`)}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">${Object.entries(ESER_DURUM).map(([k, [ad, ton]]) => card(`${cardBaslik(k === "konser" ? "sparkles" : k === "tamamlandi" ? "check" : "music", ad, badge(ton, grup(k).length))}
+    <div class="space-y-2">${grup(k).map(e => `<div class="p-3 bg-bg rounded-lg"><p class="text-sm">${esc(e.ad)}</p><p class="text-xs text-mut">${esc(e.besteci || "—")} · ${tarihTR(e.tarih)}</p></div>`).join("") || '<p class="text-xs text-mut">—</p>'}</div>`, "self-start")).join("")}</div>`;
+}
+function ogrNotlarHtml(s) {
+  const kayitlar = ogrenciKayitlari(s.id);
+  const etiketler = new Set(kayitlar.map(k => haftaEtiketi(k.tarih)));
+  const eski = [...s.haftalikNotlar].reverse().filter(n => !etiketler.has(n[0]));
+  return `${sayfaBaslik("Geçmiş", "Notlar", "Tüm derslerin, öğretmen değerlendirmeleri ve ödevler")}
+  <div class="space-y-3 max-w-3xl">${kayitlar.map(k => dersKaydiKarti(k, { sid: s.id })).join("") || card(bos("Henüz ders kaydı yok."))}
+  ${eski.length ? `<p class="text-xs uppercase tracking-wider text-mut pt-3">Önceki değerlendirmeler</p>${eski.map(n => `<div class="p-4 bg-card border border-line rounded-xl"><div class="flex items-center justify-between mb-1"><span class="text-xs text-mut">${esc(n[0])}</span>${puanNoktalari(n[2])}</div><p class="text-sm">${esc(n[1])}</p></div>`).join("")}` : ""}</div>`;
+}
+function ogrProgramHtml(s) {
+  const t = DB.teachers.find(x => x.id === s.teacherId);
+  const telafi = DB.makeupRequests.filter(r => r.studentId === s.id);
+  return `${sayfaBaslik("Programım")}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    ${card(`${cardBaslik("calendar", "Ders Bilgim")}<div class="space-y-2">
+      ${satir('<span class="text-sm text-mut">Branş</span>', bransBadge(s.brans))}
+      ${satir('<span class="text-sm text-mut">Öğretmen</span>', `<span class="text-sm">${esc(t ? t.ad : "Atama bekleniyor")}</span>`)}
+      ${satir('<span class="text-sm text-mut">Gün / Saat</span>', `<span class="text-sm">${s.dersGunu ? esc(s.dersGunu + " · " + s.dersSaati) : "Planlanıyor"}</span>`)}
+      ${satir('<span class="text-sm text-mut">Sıradaki ders</span>', `<span class="text-sm">${sonrakiDers(s) ? tarihTR(sonrakiDers(s)) : "-"}</span>`)}</div>
+      ${telafi.length ? `<p class="text-sm mt-5 mb-2">Telafi Dersleri</p><div class="space-y-2">${telafi.map(r => satir(`<div><p class="text-sm">${tarihTR(r.onerilenTarih)}</p><p class="text-xs text-mut">Kaçırılan: ${tarihTR(r.dersTarihi)}</p></div>`, badge(TALEP_TONE[r.durum], r.durum))).join("")}</div>` : ""}`)}
+    ${card(`${cardBaslik("check", "Yoklamam", devamOrani(s.devam) === null ? "" : badge("gold", "%" + devamOrani(s.devam)))}${devamSeridi(s.devam)}
+      <div class="space-y-2 max-h-80 overflow-y-auto mt-4">${[...s.devam].reverse().map(d => satir(`<span class="text-sm text-mut">${tarihTR(d[0])} · ${esc(gunAdi(d[0]))}</span>`, devamBadge(d[1]))).join("")}</div>`)}
+  </div>`;
+}
+function ogrKartimHtml(s) {
+  const k = s.kartNo && kartBul(s.kartNo);
+  if (!k) return `${sayfaBaslik("Kartım")}${card(bos("Kart tanımlı değil."))}`;
+  return `${sayfaBaslik("Kafe", "Kartım", "Bakiye yüklemesi velin ya da sekreterlik tarafından yapılır.")}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="space-y-4">${card(`<p class="text-sm text-mut">Bakiyem</p><p class="font-display text-4xl font-bold text-gold mt-1">${TL(kartBakiye(k.no))}</p>`)}
+      <div class="flex justify-center">${kartGorsel(k, "Öğrenci", s.ad, true)}</div></div>
+    ${card(`${cardBaslik("receipt", "Kart Hareketleri")}${hareketListesi(k.no)}`, "xl:col-span-2 self-start")}
+  </div>`;
+}
+
+/* ================================================================== */
+/* Yönetici: müfredat, ilerleme raporu, eksik ders kaydı takibi         */
+/* ================================================================== */
+let MUF_BRANS = "Piyano", MUF_SEVIYE = 1;
+function eksikDersKayitlari() {
+  const sonuc = [];
+  const bas = haftaBasi(bugun());
+  DB.teachers.forEach(t => {
+    const ogr = DB.students.filter(s => s.teacherId === t.id && s.dersGunu);
+    let eksik = [];
+    if (t.grup) {
+      [...new Set(ogr.map(s => s.dersGunu))].forEach(g => {
+        const tarih = haftaninGunu(g, bas); if (!tarih || tarih > bugun()) return;
+        const ids = ogr.filter(s => s.dersGunu === g).map(s => s.id);
+        if (!dersKaydiBul(t.id, tarih, ids)) eksik.push(`${t.grup} · ${tarihTR(tarih)}`);
+      });
+    } else ogr.forEach(s => {
+      const tarih = haftaninGunu(s.dersGunu, bas); if (!tarih || tarih > bugun()) return;
+      if (!dersKaydiBul(t.id, tarih, [s.id])) eksik.push(`${s.ad} · ${tarihTR(tarih)}`);
+    });
+    if (eksik.length) sonuc.push({ t, eksik });
+  });
+  return sonuc.sort((a, b) => b.eksik.length - a.eksik.length);
+}
+function eksikKayitKarti() {
+  const liste = eksikDersKayitlari();
+  const toplam = liste.reduce((a, x) => a + x.eksik.length, 0);
+  return card(`${cardBaslik("clipboard", "Bu Hafta Ders Kaydı Girilmemiş", toplam ? badge("orange", toplam + " ders") : badge("success", "Tamam"))}
+    <div class="space-y-2 max-h-72 overflow-y-auto">${liste.map(({ t, eksik }) => `<details class="bg-bg rounded-lg"><summary class="cursor-pointer list-none p-3 flex items-center justify-between gap-3"><span class="text-sm">${esc(t.ad)} <span class="text-xs text-mut">(${esc(t.brans)})</span></span><span class="text-xs text-orange-400">${eksik.length} eksik</span></summary>
+      <div class="px-3 pb-3 text-xs text-mut space-y-1">${eksik.map(e => `<p>• ${esc(e)}</p>`).join("")}</div></details>`).join("") || bos("Bu haftanın tüm dersleri kayıtlı.")}</div>`);
+}
+function mufredatHtml() {
+  const m = DB.mufredat[MUF_BRANS] && DB.mufredat[MUF_BRANS].seviyeler ? DB.mufredat[MUF_BRANS] : null;
+  let editor;
+  if (!m) editor = card(`<div class="text-center py-6"><p class="text-sm text-mut mb-4">${esc(MUF_BRANS)} için müfredat tanımlı değil.</p><button onclick="mufOlustur()" class="${BTN.p}">${ikon("plus")} Müfredat Oluştur</button></div>`);
+  else {
+    if (!m.seviyeler.find(x => x.no === MUF_SEVIYE)) MUF_SEVIYE = m.seviyeler[0].no;
+    const si = m.seviyeler.findIndex(x => x.no === MUF_SEVIYE), sv = m.seviyeler[si];
+    editor = `${m.aciklama ? `<p class="text-xs text-mut mb-3">${esc(m.aciklama)}</p>` : ""}
+      <div class="flex flex-wrap items-center gap-1.5 mb-3">${m.seviyeler.map(x => `<button onclick="MUF_SEVIYE=${x.no}; render()" class="text-xs px-3 py-1.5 rounded-lg border transition ${x.no === MUF_SEVIYE ? "bg-gold/15 border-gold/40 text-gold" : "border-line text-mut hover:bg-accent"}">${x.no}. Seviye</button>`).join("")}
+        <button onclick="mufSeviyeEkle()" class="${BTN.g}">${ikon("plus", "w-3.5 h-3.5")} Seviye</button></div>
+      <div class="flex items-center gap-2 mb-4">${lbl("Seviye özeti")}<input value="${esc(sv.ozet || "")}" onchange="mufSeviyeOzet(${si}, this.value)" class="${INP} !py-1.5" /></div>
+      <div class="space-y-3">${sv.haftalar.map((h, hi) => card(`
+        <div class="flex items-center justify-between gap-2 mb-2"><span class="text-sm font-medium">${h.no}. hafta <span class="text-xs text-mut font-normal">· ${h.donem || (h.no <= 20 ? 1 : 2)}. dönem</span></span>
+          <button onclick="mufHaftaSil(${si},${hi})" class="text-mut hover:text-red-400" title="Haftayı sil">${ikon("trash", "w-4 h-4")}</button></div>
+        <div class="space-y-1.5">${h.konular.map((k, ki) => `<div class="flex items-start gap-2 p-2 bg-bg rounded-md"><div class="min-w-0 flex-1"><p class="text-sm">${esc(k.ad)}</p>${k.detay ? `<p class="text-[11px] text-mut whitespace-pre-line line-clamp-3">${esc(k.detay)}</p>` : ""}</div><button onclick="mufKonuSil(${si},${hi},${ki})" class="text-mut hover:text-red-400 shrink-0">${ikon("x", "w-3.5 h-3.5")}</button></div>`).join("")}</div>
+        <div class="flex gap-1.5 mt-2"><input id="mufYeni_${hi}" placeholder="Yeni konu ekle" onkeydown="if(event.key==='Enter') mufKonuEkle(${si},${hi})" class="${INP} !py-1 !text-xs" /><button onclick="mufKonuEkle(${si},${hi})" class="${BTN.s}">${ikon("plus", "w-3.5 h-3.5")}</button></div>`, "!p-4")).join("")}</div>
+      <button onclick="mufHaftaEkle(${si})" class="${BTN.s} !text-sm !px-4 !py-2 mt-3">${ikon("plus")} Hafta Ekle</button>`;
+  }
+  return `${sayfaBaslik("Müfredat", "", "Öğretmenler ders kaydında öğrencinin seviyesindeki haftalardan konu seçer")}
+  <div class="mb-4">${chipler("MUF_BRANS", MUF_BRANS, BRANSLAR().map(b => [b, b + (mufredat(b) ? " ✓" : "")]))}</div>
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="xl:col-span-2">${editor}</div>
+    <div class="space-y-6">${mufIlerlemeRaporu()}</div>
+  </div>`;
+}
+function mufIlerlemeRaporu() {
+  const satirlar = DB.teachers.filter(t => mufredat(t.brans)).map(t => {
+    const ogr = DB.students.filter(s => s.teacherId === t.id);
+    const ort = ogr.length ? Math.round(ogr.reduce((a, s) => a + (mufredatIlerleme(s) || { yuzde: 0 }).yuzde, 0) / ogr.length) : 0;
+    const son = (DB.dersKayitlari || []).filter(k => k.teacherId === t.id).sort((a, b) => b.tarih.localeCompare(a.tarih))[0];
+    return { t, n: ogr.length, ort, son };
+  });
+  const branslar = BRANSLAR().filter(mufredat).map(b => { const o = DB.students.filter(s => s.brans === b && s.teacherId); return [b, o.length ? Math.round(o.reduce((a, s) => a + (mufredatIlerleme(s) || { yuzde: 0 }).yuzde, 0) / o.length) : 0, o.length]; });
+  const cubuk = (y) => `<div class="h-1.5 rounded-full bg-bg mt-1.5"><div class="h-1.5 rounded-full bg-gold" style="width:${y}%"></div></div>`;
+  return card(`${cardBaslik("trend", "İlerleme — Branş")}${branslar.map(([b, y, n]) => `<div class="mb-3"><div class="flex justify-between text-sm"><span>${esc(b)} <span class="text-xs text-mut">${n} öğrenci</span></span><span class="text-gold">%${y}</span></div>${cubuk(y)}</div>`).join("") || bos("Müfredatı olan branş yok.")}`)
+    + card(`${cardBaslik("cap", "İlerleme — Öğretmen")}${satirlar.map(x => `<div class="mb-3 cursor-pointer" onclick="ogretmenDetayAc('${x.t.id}')"><div class="flex justify-between text-sm"><span>${esc(x.t.ad)}</span><span class="text-gold">%${x.ort}</span></div>${cubuk(x.ort)}<p class="text-[11px] text-mut mt-1">${x.n} öğrenci · son kayıt ${x.son ? tarihTR(x.son.tarih) : "yok"}</p></div>`).join("") || bos("Henüz veri yok.")}`);
+}
+function mufOlustur() { DB.mufredat[MUF_BRANS] = { aciklama: "", seviyeler: [{ no: 1, ozet: "", haftalar: [{ no: 1, donem: 1, konular: [] }] }] }; MUF_SEVIYE = 1; saveDb(); render(); }
+function mufSv(si) { return DB.mufredat[MUF_BRANS].seviyeler[si]; }
+function mufSeviyeEkle() { const m = DB.mufredat[MUF_BRANS]; const no = Math.max(...m.seviyeler.map(x => x.no)) + 1; m.seviyeler.push({ no, ozet: "", haftalar: [{ no: 1, donem: 1, konular: [] }] }); MUF_SEVIYE = no; saveDb(); render(); }
+function mufSeviyeOzet(si, v) { mufSv(si).ozet = v.trim(); saveDb(); }
+function mufHaftaEkle(si) { const sv = mufSv(si); sv.haftalar.push({ no: sv.haftalar.length + 1, donem: sv.haftalar.length < 20 ? 1 : 2, konular: [] }); saveDb(); render(); }
+function mufHaftaSil(si, hi) { const sv = mufSv(si); sv.haftalar.splice(hi, 1); sv.haftalar.forEach((h, i) => h.no = i + 1); saveDb(); render(); }
+function mufKonuEkle(si, hi) {
+  const ad = val("mufYeni_" + hi).trim(); if (!ad) return;
+  mufSv(si).haftalar[hi].konular.push({ id: yeniId("k"), ad }); saveDb(); FORM_TEMIZLE = true; render();
+  setTimeout(() => { const el = document.getElementById("mufYeni_" + hi); if (el) el.focus(); }, 0);
+}
+function mufKonuSil(si, hi, ki) { mufSv(si).haftalar[hi].konular.splice(ki, 1); saveDb(); render(); }
+
+/* ---------- Öğrenci detayı: Dersler sekmesi (yönetici/sekreter) ---------- */
+function ogrDersler(s) {
+  const kayitlar = ogrenciKayitlari(s.id);
+  return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-4"><div class="p-4 bg-bg rounded-lg">${ilerlemeCubugu(s)}
+      ${mufredat(s.brans) ? `<div class="flex items-center gap-2 mt-3"><span class="text-xs text-mut">Müfredat seviyesi</span><select onchange="ogrSeviyeAyarla('${s.id}', this.value)" class="${INP} !w-auto !py-1 !text-xs">${mufredat(s.brans).seviyeler.map(x => `<option value="${x.no}" ${x.no === ogrSeviye(s) ? "selected" : ""}>${x.no}. Seviye</option>`).join("")}</select></div>` : ""}</div>
+      <div><div class="flex items-center justify-between mb-2"><p class="text-sm font-medium">Çaldığı Eserler</p><button onclick="eserAc('${s.id}')" class="${BTN.s}">${ikon("edit", "w-3.5 h-3.5")} Düzenle</button></div>${eserListesi(s, false)}</div></div>
+    <div><p class="text-sm font-medium mb-2">Ders Kayıtları (${kayitlar.length})</p><div class="space-y-3">${kayitlar.slice(0, 10).map(k => dersKaydiKarti(k, { sid: s.id })).join("") || bos("Henüz ders kaydı yok.")}</div></div>
+  </div>`;
+}
+
 /* ================================================================== */
 /* Kabuk: menü, üst bar                                                 */
 /* ================================================================== */
@@ -2093,7 +2783,7 @@ function menuTanimi() {
   const gecikmis = () => DB.students.filter(s => odemeOzeti(s).geciken > 0).length;
   if (ROLE === "yonetici") return [
     { baslik: null, ogeler: [["ozet","Dashboard","dashboard"]] },
-    { baslik:"Eğitim", ogeler: [["ogrenciler","Öğrenciler","users"], ["ogretmenler","Öğretmenler","cap"], ["takvim","Ders Takvimi","calendar"], ["devam","Yoklama","check"], ["telafi","Telafi Talepleri","repeat", bek(DB.makeupRequests)], ["dersonay","Ders Atama","clipboard", bek(DB.dersAtamaTalepleri)]] },
+    { baslik:"Eğitim", ogeler: [["ogrenciler","Öğrenciler","users"], ["ogretmenler","Öğretmenler","cap"], ["takvim","Ders Takvimi","calendar"], ["devam","Yoklama","check"], ["mufredat","Müfredat","book"], ["telafi","Telafi Talepleri","repeat", bek(DB.makeupRequests)], ["dersonay","Ders Atama","clipboard", bek(DB.dersAtamaTalepleri)]] },
     { baslik:"Finans", ogeler: [["finans","Finans & Taksit","wallet", gecikmis()], ["kart","Kafe Kartları","coffee"]] },
     { baslik:"Yapay Zeka", ogeler: [["eslestirme","AI Eşleştirme","sparkles", DB.students.filter(s => !s.teacherId).length], ["risk","AI Risk Analizi","shield"]] },
   ];
@@ -2102,9 +2792,10 @@ function menuTanimi() {
     { baslik:"Eğitim", ogeler: [["yoklama","Yoklama","check"], ["dersatama","Ders Atama","clipboard"], ["telafi","Telafi Talepleri","repeat", bek(DB.makeupRequests)]] },
     { baslik:"Finans", ogeler: [["finans","Tahsilat & Hatırlatma","wallet", gecikmis()], ["kart","Kafe Kartları","coffee"]] },
   ];
-  if (ROLE === "ogretmen") return [{ baslik: null, ogeler: [["yoklama","Yoklama Al","check"], ["ogrencilerim","Öğrencilerim","users"], ["gelisim","Haftalık Gelişim","trend"], ["telafi","Telafi Planlama","repeat"]] }];
+  if (ROLE === "ogretmen") return [{ baslik: null, ogeler: [["yoklama","Yoklama & Ders","check"], ["kayitlar","Ders Kayıtları","clipboard"], ["ogrencilerim","Öğrencilerim","users"], ["telafi","Telafi Planlama","repeat"]] }];
+  if (ROLE === "ogrenci") return [{ baslik: null, ogeler: [["buhafta","Bu Hafta","home"], ["eserler","Eserlerim","music"], ["notlar","Geçmiş Notlar","trend"], ["kart","Kartım","coffee"], ["materyaller","Materyaller","book"], ["program","Programım","calendar"]] }];
   if (ROLE === "kasa") return [{ baslik: null, ogeler: [["satis","Kafe Kasası","coffee"]] }];
-  if (ROLE === "veli") return [{ baslik: null, ogeler: [["ozet","Özet","home"], ["ders","Dersler & Devam","calendar"], ["gelisim","Gelişim Notları","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"]] }];
+  if (ROLE === "veli") return [{ baslik: null, ogeler: [["ozet","Özet","home"], ["ders","Dersler & Devam","calendar"], ["gelisim","Ders Notları","trend"], ["odeme","Ödemeler","wallet"], ["kart","Kafe Kartı","coffee"]] }];
   return [];
 }
 function sidebarHtml() {
@@ -2153,7 +2844,7 @@ function topBarHtml() {
 function icerikHtml() {
   const tab = TABS[ROLE];
   if (ROLE === "yonetici") {
-    const map = { ozet:adminOverviewHtml, ogrenciler:() => ogrenciListesiHtml("yonetici"), ogretmenler:teachersHtml, takvim:adminCalendarHtml, devam:adminAttendanceHtml, telafi:telafiHtml, dersonay:adminLessonApprovalsHtml, finans:financeHtml, kart:kartlarHtml, eslestirme:adminAIMatchHtml, risk:adminAIRiskHtml };
+    const map = { ozet:adminOverviewHtml, ogrenciler:() => ogrenciListesiHtml("yonetici"), ogretmenler:teachersHtml, takvim:adminCalendarHtml, devam:adminAttendanceHtml, mufredat:mufredatHtml, telafi:telafiHtml, dersonay:adminLessonApprovalsHtml, finans:financeHtml, kart:kartlarHtml, eslestirme:adminAIMatchHtml, risk:adminAIRiskHtml };
     return (map[tab] || adminOverviewHtml)();
   }
   if (ROLE === "sekreter") {
@@ -2163,13 +2854,14 @@ function icerikHtml() {
   if (ROLE === "ogretmen") {
     const t = benimOgretmen(); if (!t) return card(bos("Öğretmen kaydınız bulunamadı."));
     const ogr = DB.students.filter(s => s.teacherId === t.id);
-    if (tab === "gelisim") return teacherWeeklyHtml(ogr);
+    if (tab === "kayitlar") return teacherRecordsHtml(ogr);
     if (tab === "telafi") return teacherMakeupHtml(ogr, t.id);
     if (tab === "ogrencilerim") return teacherStudentsHtml(ogr);
     return teacherAttendanceHtml(ogr);
   }
   if (ROLE === "kasa") return kasaHtml();
   if (ROLE === "veli") return veliPanelHtml();
+  if (ROLE === "ogrenci") return ogrenciPanelHtml();
   return "";
 }
 /* Telefonda alt sekme çubuğu: en sık kullanılan 4 sayfa + "Menü" */
@@ -2209,7 +2901,7 @@ function dashboardHtml() {
 function render() {
   const app = document.getElementById("app");
   const eski = {};
-  if (!FORM_TEMIZLE) app.querySelectorAll("input[id], select[id], textarea[id]").forEach(el => { if (el.type !== "range") eski[el.id] = el.value; });
+  if (!FORM_TEMIZLE) app.querySelectorAll("input[id], select[id], textarea[id]").forEach(el => { if (el.type !== "range" && el.type !== "file" && el.type !== "checkbox") eski[el.id] = el.value; });
   FORM_TEMIZLE = false;
   const odak = document.activeElement && document.activeElement.id; let secim = null;
   try { if (odak) secim = [document.activeElement.selectionStart, document.activeElement.selectionEnd]; } catch (e) {}
@@ -2217,7 +2909,8 @@ function render() {
 
   app.innerHTML = (NATIVE && !API_BASE) ? sunucuAyarHtml()
     : (NATIVE && SUNUCU_HATA === "baglanti") ? sunucuHataHtml()
-    : (!USER || !DB) ? loginScreenHtml() : dashboardHtml();
+    : (!USER || !DB) ? loginScreenHtml()
+    : (USER.rol === "ogrenci" && USER.sifreDegistir) ? sifreDegistirHtml() : dashboardHtml();
   app.insertAdjacentHTML("beforeend", toastHtml());
   MODAL_ANIM = false;
 
